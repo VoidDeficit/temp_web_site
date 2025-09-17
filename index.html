@@ -72,7 +72,7 @@ function buildFormForTemplate(t){
       form.appendChild(input);
     }
   }
-  // Variablen aus Titel/Text (nicht in fields)
+  // Variablen aus Titel/Text (nicht in fields, einmalig hinzufügen)
   const allPlaceholders = new Set((t.title+t.text).match(/{{\s*([a-zA-Z0-9_äöüÄÖÜß ]+)\s*}}/g)||[]);
   allPlaceholders.forEach(ph => {
     const key = ph.replace(/[{}]/g,'').trim();
@@ -121,16 +121,11 @@ function updatePreview(){
   const t=templates[select.value];
   const data={};
   [...form.elements].forEach(el=>{ if(el.name) data[el.name]=el.value; });
-  // Nicht-editierbare Felder übernehmen (nicht angezeigt im UI)
-  for(const key in t.fields){
-    if(!t.fields[key].editable) data[key]=t.fields[key].value;
-  }
+  for(const key in t.fields){ if(!t.fields[key].editable) data[key]=t.fields[key].value; }
 
-  const multiKeys=Object.keys(t.fields).filter(k=>['name','server'].includes(k));
-  const combos=getAllCombinations(data,multiKeys);
-
-  titleBox.innerText=combos.map(c=>fillPlaceholders(t.title,c)).join('\n-------------------\n');
-  preview.innerText=combos.map(c=>fillPlaceholders(t.text,c)).join('\n-------------------\n');
+  // Titel/Text nur einmal ausführen
+  titleBox.innerText = fillPlaceholders(t.title, data);
+  preview.innerText = fillPlaceholders(t.text, data);
 }
 
 function downloadCSV(){
