@@ -138,7 +138,7 @@ function downloadCSV(){
 
   const servers = (data.server||'').split(',').map(s=>s.trim()).filter(s=>s);
 
-  // CSV-Felder: nur fields + pairs (keine Variablen aus title/text!)
+  // CSV-Felder: nur fields + pairs
   const csvFields = new Set(["server"]);
   Object.keys(t.fields).forEach(f => { if(f !== "server") csvFields.add(unsanitizeKey(f)); });
   if(t.pairs && t.pairs.length > 0){
@@ -169,11 +169,16 @@ function downloadCSV(){
     }
   });
 
-  const bom = "\uFEFF"; // BOM für Excel
+  // Dynamischer Dateiname basierend auf Template + Platzhalter, z.B. Rechung_{{server}}.csv
+  let filename = t.name;
+  if(data.server) filename += '_' + data.server;
+  filename += '.csv';
+
+  const bom = "\uFEFF";
   const blob = new Blob([bom+csvLines.join('\n')], {type:'text/csv;charset=utf-8;'});
   const link = document.createElement('a');
   link.href = URL.createObjectURL(blob);
-  link.download = 'daten.csv';
+  link.download = filename;
   document.body.appendChild(link);
   link.click();
   document.body.removeChild(link);
