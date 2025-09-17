@@ -2,7 +2,7 @@
 <html lang="de">
 <head>
 <meta charset="UTF-8">
-<title>Dynamische Textbausteine mit separaten Variablen</title>
+<title>Dynamische Textbausteine mit CSV-Header Mapping</title>
 <style>
 body { font-family: sans-serif; margin: 2em; }
 label { display:block; margin-top: 1em; }
@@ -13,7 +13,7 @@ button { margin-top: 0.5em; }
 </head>
 <body>
 
-<h1>Dynamische Textbausteine (Titel/Text mit eigenen Variablen)</h1>
+<h1>Dynamische Textbausteine (CSV-Header Mapping)</h1>
 
 <label for="templateSelect">Vorlage auswählen:</label>
 <select id="templateSelect"></select>
@@ -33,9 +33,9 @@ button { margin-top: 0.5em; }
 const templates = [
   { 
     name: "Rechnung", 
-    title: "Rechnung für {{name}} - Ticket {{ticket_nr}}", 
-    text: "Sehr geehrte/r {{name}},\nHiermit erhalten Sie die Rechnung für {{server}} über {{betrag}} Euro. Ticket-Nr: {{ticket_nr}}\n\nMit freundlichen Grüßen\n{{firma}}", 
-    fields: { name: "", server: "", firma: "", betrag: "" } // nur Felder für CSV
+    title: "Rechnung für {{name}} - Ticket {{ticket nr}}", 
+    text: "Sehr geehrte/r {{name}},\nHiermit erhalten Sie die Rechnung für {{server}} über {{betrag}} Euro. Ticket-Nr: {{ticket nr}}\n\nMit freundlichen Grüßen\n{{firma tews}}", 
+    fields: { name: "", server: "", firma_tews: "", betrag: "" } // CSV-Felder
   }
 ];
 
@@ -54,27 +54,36 @@ function escapeRegex(str) {
   return str.replace(/[.*+?^${}()|[\\]\\]/g, '\\$&');
 }
 
+function sanitizeKey(key){
+  return key.replace(/ /g,'_'); // HTML-Name
+}
+
+function unsanitizeKey(key){
+  return key.replace(/_/g,' '); // Für CSV Header und Vorschau
+}
+
 function buildFormForTemplate(t){
   form.innerHTML = '';
-  // Felder aus CSV fields
+  // CSV-Felder
   for(const key in t.fields){
     const label = document.createElement('label');
-    label.textContent = key + ((key==='server' || key==='name') ? ' (mehrere durch Komma trennen)' : '') + ':';
+    label.textContent = unsanitizeKey(key) + ((key==='server' || key==='name') ? ' (mehrere durch Komma trennen)' : '') + ':';
     const input = document.createElement('input');
     input.name = key;
     input.value = t.fields[key] || '';
     form.appendChild(label);
     form.appendChild(input);
   }
-  // Dynamische Variablen aus Titel/Text (nicht in fields)
-  const allPlaceholders = new Set((t.title+t.text).match(/{{\s*([a-zA-Z0-9_äöüÄÖÜß]+)\s*}}/g)||[]);
+  // Variablen aus Titel/Text (nicht in fields)
+  const allPlaceholders = new Set((t.title+t.text).match(/{{\s*([a-zA-Z0-9_äöüÄÖÜß ]+)\s*}}/g)||[]);
   allPlaceholders.forEach(ph => {
-    const key = ph.replace(/[{}\s]/g,'');
-    if(!(key in t.fields)){
+    const key = ph.replace(/[{}]/g,'').trim();
+    const inputName = sanitizeKey(key);
+    if(!(key in t.fields) && !form.querySelector(`[name='${inputName}']`)){
       const label = document.createElement('label');
       label.textContent = key + ':';
       const input = document.createElement('input');
-      input.name = key;
+      input.name = inputName;
       input.value = '';
       form.appendChild(label);
       form.appendChild(input);
@@ -106,7 +115,10 @@ function getAllCombinations(data, multiKeys){
 }
 
 function fillPlaceholders(templateStr, data){
-  return templateStr.replace(/{{\s*([a-zA-Z0-9_äöüÄÖÜß]+)\s*}}/g,(m,k)=>(data[k]!==undefined ? data[k] : m));
+  return templateStr.replace(/{{\s*([a-zA-Z0-9_äöüÄÖÜß ]+)\s*}}/g,(m,k)=>{
+    const key = sanitizeKey(k); // HTML-Name
+    return data[key] !== undefined ? data[key] : m;
+  });
 }
 
 function updatePreview(){
@@ -130,7 +142,8 @@ function downloadCSV(){
   const combos = getAllCombinations(data, multiKeys);
 
   const csvFields = Object.keys(t.fields);
-  const csvLines = [csvFields.join(';')];
+  const csvHeader = csvFields.map(f => unsanitizeKey(f)); // _ → Leerzeichen
+  const csvLines = [csvHeader.join(';')];
 
   combos.forEach(r => {
     const values = csvFields.map(k=>r[k]||'');
