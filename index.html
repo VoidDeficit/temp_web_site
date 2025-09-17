@@ -2,7 +2,7 @@
 <html lang="de">
 <head>
   <meta charset="UTF-8">
-  <title>Textbausteine mit Platzhaltern</title>
+  <title>Textbausteine mit Titel und Text</title>
   <style>
     body { font-family: sans-serif; margin: 2em; }
     label { display:block; margin-top: 1em; }
@@ -25,15 +25,27 @@
   <div id="titleBox"></div>
   <button onclick="copyTitle()">Titel kopieren</button>
 
-  <h2>Vorschau</h2>
+  <h2>Text</h2>
   <div id="preview"></div>
   <button onclick="copyText()">Text kopieren</button>
 
   <script>
     const templates = [
-      { name: "Gruß", text: "Hallo {{name}},\n\nich hoffe es geht dir gut!\n\nViele Grüße,\n{{sender}}" },
-      { name: "Rechnung", text: "Sehr geehrte/r {{name}},\n\nHiermit erhalten Sie die Rechnung über {{betrag}} Euro.\n\nMit freundlichen Grüßen\n{{firma}}" },
-      { name: "Jobangebot", text: "Hallo {{name}},\n\nwir freuen uns, Ihnen die Stelle als {{position}} anzubieten.\n\nBeste Grüße,\n{{firma}}" }
+      { 
+        name: "Gruß", 
+        title: "Gruß an {{name}}", 
+        text: "Hallo {{name}},\n\nich hoffe es geht dir gut!\n\nViele Grüße,\n{{sender}}" 
+      },
+      { 
+        name: "Rechnung", 
+        title: "Rechnung für {{name}}", 
+        text: "Sehr geehrte/r {{name}},\n\nHiermit erhalten Sie die Rechnung über {{betrag}} Euro.\n\nMit freundlichen Grüßen\n{{firma}}" 
+      },
+      { 
+        name: "Jobangebot", 
+        title: "Jobangebot: {{position}} bei {{firma}}", 
+        text: "Hallo {{name}},\n\nwir freuen uns, Ihnen die Stelle als {{position}} anzubieten.\n\nBeste Grüße,\n{{firma}}" 
+      }
     ];
 
     const select = document.getElementById('templateSelect');
@@ -58,7 +70,9 @@
       form.innerHTML = '';
       const regex = /{{\s*([a-zA-Z0-9_äöüÄÖÜß]+)\s*}}/g;
       let m, found = new Set();
-      while((m = regex.exec(t.text))) found.add(m[1]);
+      [t.text, t.title].forEach(str => {
+        while((m = regex.exec(str))) found.add(m[1]);
+      });
       found.forEach(k=>{
         let label = document.createElement('label');
         label.textContent = k+":";
@@ -78,24 +92,20 @@
     // Vorlage ausfüllen
     function fillTemplate(){
       const t = templates[select.value];
-      let out = t.text;
+      let outText = t.text;
+      let outTitle = t.title;
       const data = {};
       [...form.elements].forEach(el=>{
         if(el.name) data[el.name]=el.value;
       });
       for(const [key,val] of Object.entries(data)){
         const re = new RegExp('{{\\s*' + escapeRegex(key) + '\\s*}}','g');
-        out = out.replace(re, val||'');
+        outText = outText.replace(re, val||'');
+        outTitle = outTitle.replace(re, val||'');
       }
       // Vorschau anzeigen
-      preview.innerHTML = out.replace(/{{\s*([a-zA-Z0-9_äöüÄÖÜß]+)\s*}}/g,(m,k)=>`<span class="placeholder">${k} (fehlt)</span>`);
-
-      // Titel erzeugen: Basis = Vorlagenname + evtl. Name einsetzen
-      let title = t.name;
-      if (data.name) {
-        title += " für " + data.name;
-      }
-      titleBox.textContent = title;
+      preview.innerHTML = outText.replace(/{{\s*([a-zA-Z0-9_äöüÄÖÜß]+)\s*}}/g,(m,k)=>`<span class="placeholder">${k} (fehlt)</span>`);
+      titleBox.innerHTML = outTitle.replace(/{{\s*([a-zA-Z0-9_äöüÄÖÜß]+)\s*}}/g,(m,k)=>`<span class="placeholder">${k} (fehlt)</span>`);
     }
 
     function copyText(){
