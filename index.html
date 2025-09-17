@@ -146,7 +146,10 @@ function downloadCSV(){
     csvLines.push(values.join(';'));
   });
 
-  const blob=new Blob([csvLines.join('\n')],{type:'text/csv;charset=utf-8;'});
+  // UTF-8 BOM hinzufügen
+  const bom = new Uint8Array([0xEF, 0xBB, 0xBF]);
+  const blob = new Blob([bom, csvLines.join('\n')], {type:'text/csv;charset=utf-8;'});
+  
   const link=document.createElement('a');
   link.href=URL.createObjectURL(blob);
   link.download='daten.csv';
