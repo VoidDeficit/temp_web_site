@@ -109,30 +109,49 @@ function updatePreview(){
 }
 
 function downloadCSV(){
-  const t=templates[select.value];
-  const data={};
-  [...form.elements].forEach(el=>{ if(el.name) data[el.name]=el.value; });
-  for(const key in t.fields){ if(!t.fields[key].editable) data[key]=t.fields[key].value; }
+  const t = templates[select.value];
+  const data = {};
+  [...form.elements].forEach(el => { if(el.name) data[el.name] = el.value; });
+  for(const key in t.fields){ 
+    if(!t.fields[key].editable) data[key] = t.fields[key].value; 
+  }
 
-  const servers=parseMultipleValues(data.server||'');
+  const servers = parseMultipleValues(data.server || '');
 
-  const csvFields=["server","user","group","betrag","firma tews"];
+  // Sammle alle möglichen Felder aus fields + pairs
+  const csvFields = ["server"];
+  Object.keys(t.fields).forEach(f => {
+    if(f !== "server") csvFields.push(f.replace(/_/g," ")); // Unterstriche → Leerzeichen
+  });
+  if(t.pairs && t.pairs.length > 0){
+    Object.keys(t.pairs[0]).forEach(k=>{
+      if(!csvFields.includes(k)) csvFields.push(k);
+    });
+  }
+
   const csvLines=[csvFields.join(';')];
 
   servers.forEach(server=>{
-    t.pairs.forEach(pair=>{
-      const row=[
-        server,
-        pair.user,
-        pair.group,
-        data.betrag||'',
-        data.firma_tews||''
-      ];
+    if(t.pairs && t.pairs.length>0){
+      t.pairs.forEach(pair=>{
+        const row = csvFields.map(field=>{
+          if(field==="server") return server;
+          // zuerst aus pair, sonst aus data
+          return pair[field]!==undefined ? pair[field] : (data[field.replace(/ /g,"_")] || '');
+        });
+        csvLines.push(row.join(';'));
+      });
+    } else {
+      // Falls keine pairs definiert sind
+      const row = csvFields.map(field=>{
+        if(field==="server") return server;
+        return data[field.replace(/ /g,"_")] || '';
+      });
       csvLines.push(row.join(';'));
-    });
+    }
   });
 
-  const bom="\uFEFF"; // damit Excel Umlaute richtig darstellt
+  const bom="\uFEFF"; // UTF-8 BOM für Excel
   const blob=new Blob([bom+csvLines.join('\n')],{type:'text/csv;charset=utf-8;'});
   const link=document.createElement('a');
   link.href=URL.createObjectURL(blob);
