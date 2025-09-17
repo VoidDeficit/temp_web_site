@@ -1,178 +1,115 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="de">
 <head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>Vorlagen-Ausfüller — Dropdown + Formular</title>
+  <meta charset="UTF-8">
+  <title>Textbausteine mit Platzhaltern</title>
   <style>
-    body{font-family:system-ui,Segoe UI,Roboto,Arial;margin:24px;background:#f7f9fc;color:#111}
-    .container{max-width:900px;margin:0 auto;background:white;padding:18px;border-radius:8px;box-shadow:0 6px 18px rgba(10,20,40,0.06)}
-    label{display:block;margin-top:10px;font-weight:600}
-    select, input, textarea, button{width:100%;padding:10px;border-radius:6px;border:1px solid #d1d7df;font-size:15px}
-    .row{display:grid;grid-template-columns:1fr 1fr;gap:12px}
-    .controls{display:flex;gap:8px;margin-top:12px}
-    .preview{white-space:pre-wrap;padding:12px;border-radius:6px;border:1px dashed #cbd5e1;background:#fbfdff;margin-top:12px}
-    .placeholder{background:linear-gradient(90deg,rgba(255,230,180,0.6),rgba(255,240,200,0.4));padding:2px 6px;border-radius:4px}
-    .small{font-size:13px;color:#556}
-    .buttons{display:flex;gap:8px;margin-top:10px}
-    @media (max-width:720px){.row{grid-template-columns:1fr}}
+    body { font-family: sans-serif; margin: 2em; }
+    label { display:block; margin-top: 1em; }
+    textarea { width: 100%; height: 150px; margin-top: 1em; }
+    .placeholder { color: red; font-weight: bold; }
+    #titleBox, #preview { border: 1px solid #aaa; padding: 1em; margin-top: 1em; white-space: pre-wrap; }
+    button { margin-top: 0.5em; }
   </style>
 </head>
 <body>
-  <div class="container">
-    <h2>Vorlagen-Ausfüller (Dropdown + Formular)</h2>
-    <p class="small">Wähle eine Vorlage aus der Liste. Die Formularfelder werden automatisch aus den Platzhaltern (z. B. <code>{{name}}</code>) erzeugt. Fülle sie aus und klicke auf „Vorlage ausfüllen“.</p>
+  <h1>Textbausteine ausfüllen</h1>
 
-    <label for="templateSelect">Vorlage auswählen</label>
-    <select id="templateSelect"></select>
+  <label for="templateSelect">Vorlage auswählen:</label>
+  <select id="templateSelect"></select>
 
-    <div id="formArea"></div>
+  <form id="inputForm"></form>
+  <button type="button" onclick="fillTemplate()">Vorlage ausfüllen</button>
 
-    <div class="controls">
-      <div style="flex:1">
-        <label for="extraNote">Zusatztext (optional)</label>
-        <input id="extraNote" placeholder="Zusätzlichen Text eingeben...">
-      </div>
-      <div style="width:160px">
-        <label>&nbsp;</label>
-        <button id="fillBtn">Vorlage ausfüllen</button>
-      </div>
-    </div>
+  <h2>Titel</h2>
+  <div id="titleBox"></div>
+  <button onclick="copyTitle()">Titel kopieren</button>
 
-    <div class="buttons">
-      <button id="copyBtn">In Zwischenablage kopieren</button>
-      <button id="resetBtn">Formular zurücksetzen</button>
-    </div>
-
-    <h3 style="margin-top:18px">Vorschau</h3>
-    <div id="preview" class="preview">(Hier erscheint der ausgefüllte Text)</div>
-
-    <details style="margin-top:14px">
-      <summary>Vorlagenliste</summary>
-      <pre id="templateList" class="small"></pre>
-    </details>
-
-    <p class="small" style="margin-top:10px">Hinweis: Neue Vorlagen können unten im JavaScript im <code>templates</code>-Array hinzugefügt werden.</p>
-  </div>
+  <h2>Vorschau</h2>
+  <div id="preview"></div>
+  <button onclick="copyText()">Text kopieren</button>
 
   <script>
-  // === Vorlagen hier anpassen oder erweitern ===
-  const templates = [
-    {
-      id: 'gruss',
-      title: 'Einfacher Gruß',
-      text: 'Hallo {{name}},\n\nich hoffe, es geht dir gut. Wir treffen uns am {{datum}} um {{uhrzeit}} im {{ort}}. Bitte bring {{gegenstand}} mit.\n\nBeste Grüße,\n{{absender}}'
-    },
-    {
-      id: 'rechnung',
-      title: 'Rechnungsnotiz',
-      text: 'Rechnung für {{kunde}}\nZeitraum: {{von}} bis {{bis}}\nBetrag: {{betrag}} EUR\nBeschreibung: {{beschreibung}}\n\nBitte überweisen an: {{bank}} (IBAN: {{iban}})\nMit freundlichen Grüßen,\n{{absender}}'
-    },
-    {
-      id: 'jobangebot',
-      title: 'Jobangebot (kurz)',
-      text: 'Sehr geehrte/r {{bewerber}},\n\nwir freuen uns, Ihnen die Stelle als {{position}} bei {{firma}} anzubieten. Startdatum: {{start}}. Gehalt: {{gehalt}} EUR pro Jahr.\n\nBitte bestätigen Sie bis zum {{frist}}.\n\nMit freundlichen Grüßen,\n{{hr}}'
+    const templates = [
+      { name: "Gruß", text: "Hallo {{name}},\n\nich hoffe es geht dir gut!\n\nViele Grüße,\n{{sender}}" },
+      { name: "Rechnung", text: "Sehr geehrte/r {{name}},\n\nHiermit erhalten Sie die Rechnung über {{betrag}} Euro.\n\nMit freundlichen Grüßen\n{{firma}}" },
+      { name: "Jobangebot", text: "Hallo {{name}},\n\nwir freuen uns, Ihnen die Stelle als {{position}} anzubieten.\n\nBeste Grüße,\n{{firma}}" }
+    ];
+
+    const select = document.getElementById('templateSelect');
+    const form = document.getElementById('inputForm');
+    const preview = document.getElementById('preview');
+    const titleBox = document.getElementById('titleBox');
+
+    // Hilfsfunktion für Regex-Escape
+    function escapeRegex(str) {
+      return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     }
-  ];
-  // =============================================
 
-  const sel = document.getElementById('templateSelect');
-  const formArea = document.getElementById('formArea');
-  const preview = document.getElementById('preview');
-  const templateList = document.getElementById('templateList');
+    // Dropdown füllen
+    templates.forEach((t,i)=>{
+      let opt = document.createElement('option');
+      opt.value = i; opt.textContent = t.name;
+      select.appendChild(opt);
+    });
 
-  // Hilfsfunktion zum Escapen für RegExp
-  function escapeRegex(str) {
-    return str.replace(/[.*+?^${}()|[\\]\\]/g, '\\$&');
-  }
-
-  templates.forEach(t => {
-    const opt = document.createElement('option');
-    opt.value = t.id; opt.textContent = t.title;
-    sel.appendChild(opt);
-  });
-
-  templateList.textContent = templates.map(t => `${t.title} (id: ${t.id})\n---\n${t.text}\n`).join('\n');
-
-  function extractPlaceholders(text){
-    const re = /{{\s*([a-zA-Z0-9_äöüÄÖÜß]+)\s*}}/g;
-    const set = new Set();
-    let m;
-    while((m=re.exec(text))!==null) set.add(m[1]);
-    return Array.from(set);
-  }
-
-  function buildFormForTemplate(t){
-    formArea.innerHTML = '';
-    const keys = extractPlaceholders(t.text);
-    if(keys.length===0){
-      formArea.innerHTML = '<p class="small">Diese Vorlage hat keine Platzhalter.</p>';
-      return;
+    // Formularfelder für ausgewählte Vorlage generieren
+    function buildFormForTemplate(t){
+      form.innerHTML = '';
+      const regex = /{{\s*([a-zA-Z0-9_äöüÄÖÜß]+)\s*}}/g;
+      let m, found = new Set();
+      while((m = regex.exec(t.text))) found.add(m[1]);
+      found.forEach(k=>{
+        let label = document.createElement('label');
+        label.textContent = k+":";
+        let input = document.createElement('input');
+        input.name = k;
+        form.appendChild(label);
+        form.appendChild(input);
+      });
     }
-    const grid = document.createElement('div'); grid.className='row';
-    keys.forEach(k => {
-      const wrapper = document.createElement('div');
-      const label = document.createElement('label'); label.textContent = k;
-      const input = document.createElement('input'); input.dataset.key = k; input.placeholder = `${k} eingeben`;
-      wrapper.appendChild(label); wrapper.appendChild(input);
-      grid.appendChild(wrapper);
+
+    select.addEventListener('change',()=>{
+      buildFormForTemplate(templates[select.value]);
+      preview.innerHTML = '';
+      titleBox.textContent = '';
     });
-    formArea.appendChild(grid);
-  }
 
-  function getCurrentTemplate(){
-    const id = sel.value;
-    return templates.find(t=>t.id===id) || templates[0];
-  }
-
-  buildFormForTemplate(getCurrentTemplate());
-
-  sel.addEventListener('change', ()=>{
-    buildFormForTemplate(getCurrentTemplate());
-    preview.textContent = '(Hier erscheint der ausgefüllte Text)';
-  });
-
-  document.getElementById('fillBtn').addEventListener('click', ()=>{
-    const t = getCurrentTemplate();
-    let out = t.text;
-    const inputs = formArea.querySelectorAll('input[data-key]');
-    inputs.forEach(inp => {
-      const key = inp.dataset.key;
-      const val = inp.value || `«${key}»`;
-      const re = new RegExp('{{\\s*' + escapeRegex(key) + '\\s*}}','g');
-      out = out.replace(re, val);
-    });
-    const extra = document.getElementById('extraNote').value.trim();
-    if(extra) out += '\n\n' + extra;
-
-    const remaining = extractPlaceholders(out);
-    if(remaining.length>0){
+    // Vorlage ausfüllen
+    function fillTemplate(){
+      const t = templates[select.value];
+      let out = t.text;
+      const data = {};
+      [...form.elements].forEach(el=>{
+        if(el.name) data[el.name]=el.value;
+      });
+      for(const [key,val] of Object.entries(data)){
+        const re = new RegExp('{{\\s*' + escapeRegex(key) + '\\s*}}','g');
+        out = out.replace(re, val||'');
+      }
+      // Vorschau anzeigen
       preview.innerHTML = out.replace(/{{\s*([a-zA-Z0-9_äöüÄÖÜß]+)\s*}}/g,(m,k)=>`<span class="placeholder">${k} (fehlt)</span>`);
-    } else {
-      const esc = out.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-      preview.innerHTML = esc;
+
+      // Titel erzeugen: Basis = Vorlagenname + evtl. Name einsetzen
+      let title = t.name;
+      if (data.name) {
+        title += " für " + data.name;
+      }
+      titleBox.textContent = title;
     }
-  });
 
-  document.getElementById('copyBtn').addEventListener('click', async ()=>{
-    const text = preview.textContent || preview.innerText || '';
-    try{
-      await navigator.clipboard.writeText(text);
-      alert('In Zwischenablage kopiert');
-    }catch(e){
-      alert('Kopieren fehlgeschlagen — möglicherweise blockiert dein Browser den Zugriff.');
+    function copyText(){
+      navigator.clipboard.writeText(preview.innerText);
+      alert('Text in Zwischenablage kopiert!');
     }
-  });
 
-  document.getElementById('resetBtn').addEventListener('click', ()=>{
-    formArea.querySelectorAll('input[data-key]').forEach(i=>i.value='');
-    document.getElementById('extraNote').value='';
-    preview.textContent='(Hier erscheint der ausgefüllte Text)';
-  });
+    function copyTitle(){
+      navigator.clipboard.writeText(titleBox.innerText);
+      alert('Titel in Zwischenablage kopiert!');
+    }
 
-  document.addEventListener('keydown', (e)=>{
-    if(e.ctrlKey && e.key==='Enter') document.getElementById('fillBtn').click();
-  });
+    // Beim Laden erste Vorlage auswählen
+    buildFormForTemplate(templates[0]);
   </script>
 </body>
 </html>
