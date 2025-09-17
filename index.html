@@ -2,18 +2,18 @@
 <html lang="de">
 <head>
 <meta charset="UTF-8">
-<title>Dynamische Textbausteine mit editierbaren Variablen</title>
+<title>Dynamische Textbausteine mit User/Group</title>
 <style>
 body { font-family: sans-serif; margin: 2em; }
 label { display:block; margin-top: 1em; }
-input, textarea { width: 100%; margin-top: 0.3em; padding: 0.3em; }
+input { width: 100%; margin-top: 0.3em; padding: 0.3em; }
 #titleBox, #preview { border: 1px solid #aaa; padding: 1em; margin-top: 1em; white-space: pre-wrap; }
 button { margin-top: 0.5em; }
 </style>
 </head>
 <body>
 
-<h1>Dynamische Textbausteine (mit editierbaren Variablen)</h1>
+<h1>Dynamische Textbausteine (User/Group + Server)</h1>
 
 <label for="templateSelect">Vorlage auswählen:</label>
 <select id="templateSelect"></select>
@@ -30,17 +30,23 @@ button { margin-top: 0.5em; }
 <button onclick="downloadCSV()">CSV herunterladen</button>
 
 <script>
+// Templates mit User-Group-Paaren
 const templates = [
   { 
     name: "Rechnung", 
     title: "Rechnung für {{name}} - Ticket {{ticket nr}}", 
-    text: "Sehr geehrte/r {{name}},\nHiermit erhalten Sie die Rechnung für {{server}} über {{betrag}} Euro. Ticket-Nr: {{ticket nr}}\n\nMit freundlichen Grüßen\n{{firma tews}}", 
+    text: "Sehr geehrte/r {{name}},\nHiermit erhalten Sie die Rechnung für {{server}} über {{betrag}} Euro.\n\nMit freundlichen Grüßen\n{{firma tews}}", 
     fields: {
-      name: { value: "", editable: true },
-      server: { value: "", editable: true },
-      firma_tews: { value: "Tews GmbH", editable: false },
-      betrag: { value: "", editable: true }
-    }
+      server: { value: "", editable: true },   // Eingabe mehrerer Server
+      name:   { value: "Kunde X", editable: false }, // Platzhaltername nur für Titel/Text
+      betrag: { value: "100", editable: true },
+      firma_tews: { value: "Tews GmbH", editable: false }
+    },
+    pairs: [
+      { user: "example_user1", group: "example_group1" },
+      { user: "example_user1", group: "example_group2" },
+      { user: "example_user2", group: "example_group2" }
+    ]
   }
 ];
 
@@ -55,16 +61,13 @@ templates.forEach((t,i)=>{
   select.appendChild(opt);
 });
 
-function sanitizeKey(key){ return key.replace(/ /g,'_'); }
-function unsanitizeKey(key){ return key.replace(/_/g,' '); }
-
 function buildFormForTemplate(t){
   form.innerHTML = '';
   for(const key in t.fields){
     const field = t.fields[key];
     if(field.editable){
       const label = document.createElement('label');
-      label.textContent = unsanitizeKey(key) + ((key==='server' || key==='name') ? ' (mehrere durch Komma trennen)' : '') + ':';
+      label.textContent = key + (key==='server' ? ' (mehrere durch Komma trennen)' : '') + ':';
       const input = document.createElement('input');
       input.name = key;
       input.value = field.value || '';
@@ -72,21 +75,6 @@ function buildFormForTemplate(t){
       form.appendChild(input);
     }
   }
-  // Variablen aus Titel/Text (nicht in fields, einmalig hinzufügen)
-  const allPlaceholders = new Set((t.title+t.text).match(/{{\s*([a-zA-Z0-9_äöüÄÖÜß ]+)\s*}}/g)||[]);
-  allPlaceholders.forEach(ph => {
-    const key = ph.replace(/[{}]/g,'').trim();
-    const inputName = sanitizeKey(key);
-    if(!(key in t.fields) && !form.querySelector(`[name='${inputName}']`)){
-      const label = document.createElement('label');
-      label.textContent = key + ':';
-      const input = document.createElement('input');
-      input.name = inputName;
-      input.value = '';
-      form.appendChild(label);
-      form.appendChild(input);
-    }
-  });
 }
 
 select.addEventListener('change',()=>{
@@ -96,24 +84,13 @@ select.addEventListener('change',()=>{
 
 buildFormForTemplate(templates[0]);
 
-function parseMultipleValues(value){ return value.split(',').map(s=>s.trim()).filter(s=>s); }
-
-function getAllCombinations(data, multiKeys){
-  if(multiKeys.length===0) return [data];
-  const [key,...rest]=multiKeys;
-  const values=parseMultipleValues(data[key]||'');
-  const combinations=[];
-  values.forEach(v=>{
-    const copy={...data,[key]:v};
-    combinations.push(...getAllCombinations(copy,rest));
-  });
-  return combinations;
+function parseMultipleValues(value){ 
+  return value.split(',').map(s=>s.trim()).filter(s=>s); 
 }
 
 function fillPlaceholders(templateStr, data){
   return templateStr.replace(/{{\s*([a-zA-Z0-9_äöüÄÖÜß ]+)\s*}}/g,(m,k)=>{
-    const key=sanitizeKey(k);
-    return data[key]!==undefined?data[key]:m;
+    return data[k]!==undefined?data[k]:m;
   });
 }
 
@@ -121,11 +98,14 @@ function updatePreview(){
   const t=templates[select.value];
   const data={};
   [...form.elements].forEach(el=>{ if(el.name) data[el.name]=el.value; });
-  for(const key in t.fields){ if(!t.fields[key].editable) data[key]=t.fields[key].value; }
+  // Nicht-editierbare Felder übernehmen
+  for(const key in t.fields){
+    if(!t.fields[key].editable) data[key]=t.fields[key].value;
+  }
 
-  // Titel/Text nur einmal ausführen
-  titleBox.innerText = fillPlaceholders(t.title, data);
-  preview.innerText = fillPlaceholders(t.text, data);
+  // Titel & Text nur einmal
+  titleBox.innerText = fillPlaceholders(t.title,data);
+  preview.innerText  = fillPlaceholders(t.text,data);
 }
 
 function downloadCSV(){
@@ -134,22 +114,26 @@ function downloadCSV(){
   [...form.elements].forEach(el=>{ if(el.name) data[el.name]=el.value; });
   for(const key in t.fields){ if(!t.fields[key].editable) data[key]=t.fields[key].value; }
 
-  const multiKeys=Object.keys(t.fields).filter(k=>['name','server'].includes(k));
-  const combos=getAllCombinations(data,multiKeys);
+  const servers=parseMultipleValues(data.server||'');
 
-  const csvFields=Object.keys(t.fields);
-  const csvHeader=csvFields.map(f=>unsanitizeKey(f));
-  const csvLines=[csvHeader.join(';')];
+  const csvFields=["server","user","group","betrag","firma tews"];
+  const csvLines=[csvFields.join(';')];
 
-  combos.forEach(r=>{
-    const values=csvFields.map(k=>r[k]||'');
-    csvLines.push(values.join(';'));
+  servers.forEach(server=>{
+    t.pairs.forEach(pair=>{
+      const row=[
+        server,
+        pair.user,
+        pair.group,
+        data.betrag||'',
+        data.firma_tews||''
+      ];
+      csvLines.push(row.join(';'));
+    });
   });
 
-  // UTF-8 BOM hinzufügen
-  const bom = new Uint8Array([0xEF, 0xBB, 0xBF]);
-  const blob = new Blob([bom, csvLines.join('\n')], {type:'text/csv;charset=utf-8;'});
-  
+  const bom="\uFEFF"; // damit Excel Umlaute richtig darstellt
+  const blob=new Blob([bom+csvLines.join('\n')],{type:'text/csv;charset=utf-8;'});
   const link=document.createElement('a');
   link.href=URL.createObjectURL(blob);
   link.download='daten.csv';
