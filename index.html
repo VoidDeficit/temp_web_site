@@ -2,7 +2,7 @@
 <html lang="de">
 <head>
 <meta charset="UTF-8">
-<title>Dynamische Textbausteine mit editierbaren Variablen</title>
+<title>Dynamische Textbausteine</title>
 <style>
 body { font-family: sans-serif; margin: 2em; }
 label { display:block; margin-top: 1em; }
@@ -13,7 +13,7 @@ button { margin-top: 0.5em; }
 </head>
 <body>
 
-<h1>Dynamische Textbausteine (mit editierbaren Variablen)</h1>
+<h1>Dynamische Textbausteine</h1>
 
 <label for="templateSelect">Vorlage auswählen:</label>
 <select id="templateSelect"></select>
@@ -30,20 +30,21 @@ button { margin-top: 0.5em; }
 <button onclick="downloadCSV()">CSV herunterladen</button>
 
 <script>
+// === Templates definieren ===
 const templates = [
   { 
     name: "Rechnung", 
-    title: "Rechnung für {{user}} - Ticket {{ticket nr}}", 
-    text: "Sehr geehrte/r {{user}},\nHiermit erhalten Sie die Rechnung für {{server}} über {{betrag}} Euro.\n\nMit freundlichen Grüßen\n{{firma tews}}", 
+    title: "Rechnung für {{kunde}} - Ticket {{ticket nr}}", 
+    text: "Sehr geehrte/r {{kunde}},\nHiermit erhalten Sie die Rechnung für {{server}} über {{betrag}} Euro.\n\nMit freundlichen Grüßen\n{{firma tews}}", 
     fields: {
       server: { value: "", editable: true },
       betrag: { value: "", editable: true },
       firma_tews: { value: "Tews GmbH", editable: false }
     },
     pairs: [
-      { user: "example_user1", group: "example_group1" },
-      { user: "example_user1", group: "example_group2" },
-      { user: "example_user2", group: "example_group2" }
+      { kunde: "example_user1", abteilung: "example_group1" },
+      { kunde: "example_user1", abteilung: "example_group2" },
+      { kunde: "example_user2", abteilung: "example_group2" }
     ]
   }
 ];
@@ -53,33 +54,27 @@ const form = document.getElementById('inputForm');
 const preview = document.getElementById('preview');
 const titleBox = document.getElementById('titleBox');
 
+// Dropdown mit Templates füllen
 templates.forEach((t,i)=>{
   let opt = document.createElement('option');
   opt.value = i; opt.textContent = t.name;
   select.appendChild(opt);
 });
 
+// Hilfsfunktionen
 function sanitizeKey(key){ return key.replace(/ /g,'_'); }
 function unsanitizeKey(key){ return key.replace(/_/g,' '); }
 
-function collectAllPlaceholders(t){
-  const regex = /{{\s*([a-zA-Z0-9_äöüÄÖÜß ]+)\s*}}/g;
-  const set = new Set();
-  (t.title+t.text).replace(regex,(m,k)=>set.add(k.trim()));
-  return Array.from(set);
-}
-
+// Formular für Template bauen
 function buildFormForTemplate(t){
   form.innerHTML = '';
-  const allKeys = new Set();
 
-  // aus fields
+  // Editierbare Felder aus fields
   for(const key in t.fields){
     const field = t.fields[key];
     if(field.editable){
-      allKeys.add(key);
       const label = document.createElement('label');
-      label.textContent = unsanitizeKey(key) + ((key==='server') ? ' (mehrere durch Komma trennen)' : '') + ':';
+      label.textContent = unsanitizeKey(key) + (key==='server' ? ' (mehrere durch Komma trennen)' : '') + ':';
       const input = document.createElement('input');
       input.name = key;
       input.value = field.value || '';
@@ -88,11 +83,12 @@ function buildFormForTemplate(t){
     }
   }
 
-  // aus title/text
-  collectAllPlaceholders(t).forEach(key=>{
+  // Variablen aus Title/Text (nur falls nicht schon in fields)
+  const allPlaceholders = new Set((t.title+t.text).match(/{{\s*([a-zA-Z0-9_äöüÄÖÜß ]+)\s*}}/g)||[]);
+  allPlaceholders.forEach(ph => {
+    const key = ph.replace(/[{}]/g,'').trim();
     const inputName = sanitizeKey(key);
-    if(!allKeys.has(inputName)){
-      allKeys.add(inputName);
+    if(!(key in t.fields) && !form.querySelector(`[name='${inputName}']`)){
       const label = document.createElement('label');
       label.textContent = key + ':';
       const input = document.createElement('input');
@@ -102,23 +98,6 @@ function buildFormForTemplate(t){
       form.appendChild(input);
     }
   });
-
-  // aus pairs
-  if(t.pairs && t.pairs.length>0){
-    Object.keys(t.pairs[0]).forEach(k=>{
-      if(!allKeys.has(k)){
-        allKeys.add(k);
-        const label=document.createElement('label');
-        label.textContent=k+": (aus pairs, nicht editierbar)";
-        const input=document.createElement('input');
-        input.name=k;
-        input.value='';
-        input.disabled=true;
-        form.appendChild(label);
-        form.appendChild(input);
-      }
-    });
-  }
 }
 
 select.addEventListener('change',()=>{
@@ -126,72 +105,75 @@ select.addEventListener('change',()=>{
   updatePreview();
 });
 
+// Start mit erstem Template
 buildFormForTemplate(templates[0]);
 
-function parseMultipleValues(value){ return value.split(',').map(s=>s.trim()).filter(s=>s); }
-
+// Vorschau
 function fillPlaceholders(templateStr, data){
   return templateStr.replace(/{{\s*([a-zA-Z0-9_äöüÄÖÜß ]+)\s*}}/g,(m,k)=>{
-    const key=sanitizeKey(k.trim());
-    return data[key]!==undefined?data[key]:m;
+    const key = sanitizeKey(k);
+    return data[key]!==undefined ? data[key] : m;
   });
 }
 
 function updatePreview(){
   const t=templates[select.value];
   const data={};
-  [...form.elements].forEach(el=>{ if(el.name && !el.disabled) data[el.name]=el.value; });
-  for(const key in t.fields){ if(!t.fields[key].editable) data[key]=t.fields[key].value; }
-
-  titleBox.innerText = fillPlaceholders(t.title,data);
-  preview.innerText = fillPlaceholders(t.text,data);
+  [...form.elements].forEach(el=>{ if(el.name) data[el.name]=el.value; });
+  // nicht-editierbare Felder dazu
+  for(const key in t.fields){
+    if(!t.fields[key].editable) data[key]=t.fields[key].value;
+  }
+  // Vorschau nur einmal (keine Wiederholungen)
+  titleBox.innerText=fillPlaceholders(t.title,data);
+  preview.innerText=fillPlaceholders(t.text,data);
 }
 
+// CSV Download (dynamisch)
 function downloadCSV(){
-  const t=templates[select.value];
-  const data={};
-  [...form.elements].forEach(el=>{ if(el.name && !el.disabled) data[el.name]=el.value; });
-  for(const key in t.fields){ if(!t.fields[key].editable) data[key]=t.fields[key].value; }
+  const t = templates[select.value];
+  const data = {};
+  [...form.elements].forEach(el => { if(el.name) data[el.name] = el.value; });
+  for(const key in t.fields){ if(!t.fields[key].editable) data[key] = t.fields[key].value; }
 
-  const servers=parseMultipleValues(data.server||'');
+  const servers = (data.server||'').split(',').map(s=>s.trim()).filter(s=>s);
 
-  // Sammle alle Felder
-  const csvFields=new Set(["server"]);
-  Object.keys(t.fields).forEach(f=>{ if(f!=="server") csvFields.add(unsanitizeKey(f)); });
-  collectAllPlaceholders(t).forEach(k=>csvFields.add(k));
-  if(t.pairs && t.pairs.length>0){
-    Object.keys(t.pairs[0]).forEach(k=>csvFields.add(k));
+  // CSV-Felder: nur fields + pairs (keine Variablen aus title/text!)
+  const csvFields = new Set(["server"]);
+  Object.keys(t.fields).forEach(f => { if(f !== "server") csvFields.add(unsanitizeKey(f)); });
+  if(t.pairs && t.pairs.length > 0){
+    Object.keys(t.pairs[0]).forEach(k => csvFields.add(k));
   }
 
-  const header=Array.from(csvFields);
-  const csvLines=[header.join(';')];
+  const header = Array.from(csvFields);
+  const csvLines = [header.join(';')];
 
   servers.forEach(server=>{
-    if(t.pairs && t.pairs.length>0){
+    if(t.pairs && t.pairs.length > 0){
       t.pairs.forEach(pair=>{
-        const row=header.map(field=>{
+        const row = header.map(field=>{
           if(field==="server") return server;
-          if(pair[field]!==undefined) return pair[field];
-          const key=sanitizeKey(field);
-          return data[key]||'';
+          if(pair[field] !== undefined) return pair[field];
+          const key = sanitizeKey(field);
+          return data[key] || '';
         });
         csvLines.push(row.join(';'));
       });
     } else {
-      const row=header.map(field=>{
+      const row = header.map(field=>{
         if(field==="server") return server;
-        const key=sanitizeKey(field);
-        return data[key]||'';
+        const key = sanitizeKey(field);
+        return data[key] || '';
       });
       csvLines.push(row.join(';'));
     }
   });
 
-  const bom="\uFEFF";
-  const blob=new Blob([bom+csvLines.join('\n')],{type:'text/csv;charset=utf-8;'});
-  const link=document.createElement('a');
-  link.href=URL.createObjectURL(blob);
-  link.download='daten.csv';
+  const bom = "\uFEFF"; // BOM für Excel
+  const blob = new Blob([bom+csvLines.join('\n')], {type:'text/csv;charset=utf-8;'});
+  const link = document.createElement('a');
+  link.href = URL.createObjectURL(blob);
+  link.download = 'daten.csv';
   document.body.appendChild(link);
   link.click();
   document.body.removeChild(link);
