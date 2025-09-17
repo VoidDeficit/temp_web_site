@@ -2,20 +2,21 @@
 <html lang="de">
 <head>
 <meta charset="UTF-8">
-<title>Dynamische Textbausteine</title>
+<title>Dynamische Templates mit flexiblem Repeat-Feld</title>
 <style>
 body { font-family: sans-serif; margin: 2em; }
-label { display:block; margin-top: 1em; }
+label { display:block; margin-top: 0.5em; }
 input, textarea { width: 100%; margin-top: 0.3em; padding: 0.3em; }
 #titleBox, #preview { border: 1px solid #aaa; padding: 1em; margin-top: 1em; white-space: pre-wrap; }
 button { margin-top: 0.5em; }
+.dynamic-repeat { margin-left: 1em; margin-bottom: 0.5em; }
 </style>
 </head>
 <body>
 
-<h1>Dynamische Textbausteine</h1>
+<h1>Dynamische Templates mit flexiblem Repeat-Feld</h1>
 
-<label for="templateSelect">Vorlage auswählen:</label>
+<label for="templateSelect">Template auswählen:</label>
 <select id="templateSelect"></select>
 
 <form id="inputForm"></form>
@@ -30,39 +31,23 @@ button { margin-top: 0.5em; }
 <button onclick="downloadCSV()">CSV herunterladen</button>
 
 <script>
-// === Templates definieren ===
+// ==================== Templates ====================
 const templates = [
-  { 
-    name: "Rechnung", 
-    filename: "Rechnung_{{ticket nr}}.csv",
-    title: "Rechnung für {{kunde}} - Ticket {{ticket nr}}", 
-    text: "Sehr geehrte/r {{kunde}},\nHiermit erhalten Sie die Rechnung für {{server}} über {{betrag}} Euro.\n\nMit freundlichen Grüßen\n{{firma tews}}", 
+  {
+    name: "Rechnung",
+    filename: "Rechnung_{{ticket_nr}}_{{kunde}}.csv",
+    title: "Rechnung für {{kunde}} - Ticket {{ticket_nr}}",
+    text: "Sehr geehrte/r {{kunde}},\nRechnung für {{uname}} über {{betrag}} Euro.\n\nMit freundlichen Grüßen\n{{firma_tews}}",
     fields: {
-      server: { value: "", editable: true },
-      betrag: { value: "", editable: true },
-      firma_tews: { value: "Tews GmbH", editable: false },
-      ticket_nr: { value: "", editable: true }
+      uname: { value:"", editable:true, multi:true, perServer:false, repeat:true }, // Repeat-Feld
+      kunde: { value:"", editable:true, multi:false, perServer:false, repeat:false },
+      betrag: { value:"100", editable:true, multi:false, perServer:false, repeat:false },
+      proxy: { value:"", editable:true, multi:false, perServer:true, repeat:false },
+      firma_tews: { value:"Tews GmbH", editable:true, multi:false, perServer:false, repeat:false }
     },
     pairs: [
-      { kunde: "example_user1", abteilung: "example_group1" },
-      { kunde: "example_user1", abteilung: "example_group2" },
-      { kunde: "example_user2", abteilung: "example_group2" }
-    ]
-  },
-  { 
-    name: "Mahnung", 
-    filename: "Mahnung_{{ticket nr}}.csv",
-    title: "Mahnung für {{kunde}}", 
-    text: "Hallo {{kunde}},\nLeider ist die Zahlung für {{server}} in Höhe von {{betrag}} Euro noch offen.\n\nIhr {{firma tews}}", 
-    fields: {
-      server: { value: "", editable: true },
-      betrag: { value: "100", editable: true },
-      firma_tews: { value: "Tews GmbH", editable: false },
-      ticket_nr: { value: "", editable: true }
-    },
-    pairs: [
-      { kunde: "kunde_a", abteilung: "gruppe1" },
-      { kunde: "kunde_b", abteilung: "gruppe2" }
+      { user: "example_user1", group: "example_group1", editable:false, perServer:true },
+      { user: "example_user2", group: "example_group2", editable:false, perServer:true }
     ]
   }
 ];
@@ -72,149 +57,210 @@ const form = document.getElementById('inputForm');
 const preview = document.getElementById('preview');
 const titleBox = document.getElementById('titleBox');
 
-// Dropdown mit Templates füllen
+// Dropdown
 templates.forEach((t,i)=>{
-  let opt = document.createElement('option');
+  const opt = document.createElement('option');
   opt.value = i; opt.textContent = t.name;
   select.appendChild(opt);
 });
 
-// Hilfsfunktionen
 function sanitizeKey(key){ return key.replace(/ /g,'_'); }
 function unsanitizeKey(key){ return key.replace(/_/g,' '); }
 
-function collectAllPlaceholders(t){
-  const regex=/{{\s*([a-zA-Z0-9_äöüÄÖÜß ]+)\s*}}/g;
-  const set=new Set();
-  (t.title+t.text).replace(regex,(m,k)=>set.add(k.trim()));
-  return Array.from(set);
+function fillPlaceholders(str,data){
+  return str.replace(/{{\s*([a-zA-Z0-9_äöüÄÖÜß]+)\s*}}/g,(m,k)=>{
+    const key=sanitizeKey(k);
+    return data[key]!==undefined?data[key]:m;
+  });
 }
 
-// Formular für Template bauen
-function buildFormForTemplate(t){
-  form.innerHTML = '';
+// Formular aufbauen
+function buildForm(t){
+  form.innerHTML='';
 
-  // Editierbare Felder aus fields
+  // Felder außerhalb repeat-Feld
   for(const key in t.fields){
-    const field = t.fields[key];
-    if(field.editable){
+    const f = t.fields[key];
+    if(f.editable && !f.perServer && !f.repeat){
       const label = document.createElement('label');
-      label.textContent = unsanitizeKey(key) + (key==='server' ? ' (mehrere durch Komma trennen)' : '') + ':';
+      label.textContent = unsanitizeKey(key) + (f.multi?' (mehrere durch Komma)':'') + ':';
       const input = document.createElement('input');
       input.name = key;
-      input.value = field.value || '';
+      input.value = f.value || '';
       form.appendChild(label);
       form.appendChild(input);
     }
   }
 
-  // Variablen aus Title/Text (nur falls nicht schon in fields)
-  const allPlaceholders = new Set((t.title+t.text).match(/{{\s*([a-zA-Z0-9_äöüÄÖÜß ]+)\s*}}/g)||[]);
-  allPlaceholders.forEach(ph => {
+  // Repeat-Feld
+  const repeatFieldKey = Object.keys(t.fields).find(k=>t.fields[k].repeat);
+  if(repeatFieldKey){
+    const f = t.fields[repeatFieldKey];
+    const label = document.createElement('label');
+    label.textContent = unsanitizeKey(repeatFieldKey) + (f.multi?' (mehrere durch Komma)':'') + ':';
+    const input = document.createElement('input');
+    input.name = repeatFieldKey;
+    input.value = f.value || '';
+    form.appendChild(label);
+    form.appendChild(input);
+    input.addEventListener('input',()=>buildRepeatFields(t));
+  }
+
+  // Variablen aus Title/Text, die nicht in fields sind
+  const allPlaceholders = new Set((t.title+t.text).match(/{{\s*([a-zA-Z0-9_äöüÄÖÜß]+)\s*}}/g)||[]);
+  allPlaceholders.forEach(ph=>{
     const key = ph.replace(/[{}]/g,'').trim();
-    const inputName = sanitizeKey(key);
-    if(!(key in t.fields) && !form.querySelector(`[name='${inputName}']`)){
+    if(!(key in t.fields) && !form.querySelector(`[name='${sanitizeKey(key)}']`)){
       const label = document.createElement('label');
       label.textContent = key + ':';
       const input = document.createElement('input');
-      input.name = inputName;
+      input.name = sanitizeKey(key);
       input.value = '';
       form.appendChild(label);
       form.appendChild(input);
     }
   });
+
+  // PerServer-Felder + Editable Pairs
+  buildRepeatFields(t);
 }
 
+// Dynamische Repeat-Felder
+function buildRepeatFields(t){
+  const old = form.querySelectorAll('.dynamic-repeat');
+  old.forEach(el=>el.remove());
+
+  const repeatFieldKey = Object.keys(t.fields).find(k=>t.fields[k].repeat);
+  if(!repeatFieldKey) return;
+  const repeatInput = form.querySelector(`input[name='${repeatFieldKey}']`);
+  const repeatValues = (repeatInput.value||'').split(',').map(s=>s.trim()).filter(s=>s);
+  if(!repeatValues.length) return;
+
+  repeatValues.forEach(val=>{
+    const div = document.createElement('div');
+    div.className='dynamic-repeat';
+
+    // Editable perServer-Felder
+    for(const key in t.fields){
+      const f = t.fields[key];
+      if(f.perServer && f.editable){
+        const label = document.createElement('label');
+        label.textContent = `${unsanitizeKey(key)} für ${val}` + (f.multi?' (mehrere durch Komma)':'') + ':';
+        const input = document.createElement('input');
+        input.name = `${key}_${val}`;
+        input.value = f.value || '';
+        div.appendChild(label);
+        div.appendChild(input);
+      }
+    }
+
+    // Editable pairs perServer
+    if(t.pairs && t.pairs.length>0){
+      t.pairs.forEach((pair,i)=>{
+        if(pair.editable){
+          for(const key in pair){
+            if(key==="editable" || key==="perServer" || key==="repeat") continue;
+            const label = document.createElement('label');
+            label.textContent = `${unsanitizeKey(key)} für ${val} (Pair #${i+1})`;
+            const input = document.createElement('input');
+            input.name = `pair_${i}_${key}_${val}`;
+            input.value = pair[key] || '';
+            div.appendChild(label);
+            div.appendChild(input);
+          }
+        }
+      });
+    }
+
+    form.appendChild(div);
+  });
+}
+
+// Templatewechsel
 select.addEventListener('change',()=>{
-  buildFormForTemplate(templates[select.value]);
+  buildForm(templates[select.value]);
   updatePreview();
 });
 
-// Start mit erstem Template
-buildFormForTemplate(templates[0]);
+buildForm(templates[0]);
 
 // Vorschau
-function fillPlaceholders(templateStr, data){
-  return templateStr.replace(/{{\s*([a-zA-Z0-9_äöüÄÖÜß ]+)\s*}}/g,(m,k)=>{
-    const key = sanitizeKey(k);
-    return data[key]!==undefined ? data[key] : m;
-  });
-}
-
 function updatePreview(){
-  const t=templates[select.value];
+  const t = templates[select.value];
   const data={};
   [...form.elements].forEach(el=>{ if(el.name) data[el.name]=el.value; });
-  // nicht-editierbare Felder dazu
-  for(const key in t.fields){
-    if(!t.fields[key].editable) data[key]=t.fields[key].value;
-  }
-  // Vorschau nur einmal (keine Wiederholungen)
-  titleBox.innerText=fillPlaceholders(t.title,data);
-  preview.innerText=fillPlaceholders(t.text,data);
+  for(const key in t.fields){ if(!t.fields[key].editable) data[key]=t.fields[key].value; }
+  titleBox.innerText = fillPlaceholders(t.title,data);
+  preview.innerText = fillPlaceholders(t.text,data);
 }
 
-// CSV Download (Multi-Ticket unterstützt)
+// CSV Download
 function downloadCSV(){
   const t = templates[select.value];
-  const data = {};
-  [...form.elements].forEach(el => { if(el.name) data[el.name] = el.value; });
-  for(const key in t.fields){ if(!t.fields[key].editable) data[key] = t.fields[key].value; }
+  const data={};
+  [...form.elements].forEach(el=>{ if(el.name) data[el.name]=el.value; });
+  for(const key in t.fields){ if(!t.fields[key].editable) data[key]=t.fields[key].value; }
 
-  // Serverwerte parsen
-  const servers = (data.server||'').split(',').map(s=>s.trim()).filter(s=>s);
+  // Repeat-Feld bestimmen
+  const repeatFieldKey = Object.keys(t.fields).find(k=>t.fields[k].repeat);
+  const repeatValues = repeatFieldKey ? (data[repeatFieldKey]||'').split(',').map(s=>s.trim()).filter(s=>s) : [''];
 
-  // Ticketnummern parsen
-  const tickets = (data.ticket_nr||'').split(',').map(s=>s.trim()).filter(s=>s);
-
-  // CSV-Felder: nur fields + alle Keys aus pairs
-  const csvFields = new Set(["server"]);
-  Object.keys(t.fields).forEach(f => { if(f!=="server") csvFields.add(unsanitizeKey(f)); });
+  // CSV Header
+  const csvFields = Object.keys(t.fields)
+    .filter(f=>!t.fields[f].perServer && f!==repeatFieldKey);
   if(t.pairs && t.pairs.length>0){
-    Object.keys(t.pairs[0]).forEach(k=>csvFields.add(k));
+    Object.keys(t.pairs[0]).forEach(k=>{
+      if(k!=="editable" && k!=="perServer" && k!=="repeat" && !csvFields.includes(k)) csvFields.push(k);
+    });
   }
+  if(repeatFieldKey) csvFields.unshift(repeatFieldKey); // Repeat-Feld nur einmal
+  const header = csvFields.map(f=>unsanitizeKey(f));
+  const csvLines=[header.join(';')];
 
-  const header = Array.from(csvFields);
-  const csvLines = [header.join(';')];
+  // CSV Zeilen
+  repeatValues.forEach(val=>{
+    let row = {};
+    row[repeatFieldKey] = val;
 
-  // CSV-Daten erzeugen
-  servers.forEach(server=>{
+    // Normale Felder
+    csvFields.forEach(f=>{
+      if(f!==repeatFieldKey) row[f] = data[f] || '';
+    });
+
+    // Pairs
     if(t.pairs && t.pairs.length>0){
-      t.pairs.forEach(pair=>{
-        const row = header.map(field=>{
-          if(field==="server") return server;
-          if(pair[field]!==undefined) return pair[field];
-          const key = sanitizeKey(field);
-          return data[key] || '';
-        });
-        csvLines.push(row.join(';'));
+      t.pairs.forEach((pair,i)=>{
+        for(const key in pair){
+          if(key==="editable" || key==="perServer" || key==="repeat") continue;
+          row[key] = pair[key];
+          const el = form.querySelector(`input[name='pair_${i}_${key}_${val}']`);
+          if(el) row[key] = el.value;
+        }
+        csvLines.push(csvFields.map(f=>row[f] || '').join(';'));
       });
     } else {
-      const row = header.map(field=>{
-        if(field==="server") return server;
-        const key = sanitizeKey(field);
-        return data[key] || '';
-      });
-      csvLines.push(row.join(';'));
+      csvLines.push(csvFields.map(f=>row[f] || '').join(';'));
     }
   });
 
-  // Dateiname mit allen Ticketnummern nebeneinander
-  const ticketStr = tickets.join('_') || '';
-  let filenameTemplate = t.filename || (t.name+".csv");
-  let filename = filenameTemplate.replace(/{{\s*ticket nr\s*}}/gi, ticketStr);
+  // Filename: multi → _ ersetzen
+  let filename = t.filename || 'daten.csv';
+  filename = filename.replace(/{{\s*([a-zA-Z0-9_]+)\s*}}/g,(m,key)=>{
+    let val = data[key] || '';
+    if(t.fields[key] && t.fields[key].multi) val = val.split(',').map(s=>s.trim()).join('_');
+    return val;
+  });
 
-  // CSV-Datei herunterladen
-  const bom = "\uFEFF";
-  const blob = new Blob([bom+csvLines.join('\n')], {type:'text/csv;charset=utf-8;'});
-  const link = document.createElement('a');
-  link.href = URL.createObjectURL(blob);
-  link.download = filename;
+  const bom="\uFEFF";
+  const blob=new Blob([bom+csvLines.join('\n')],{type:'text/csv;charset=utf-8;'});
+  const link=document.createElement('a');
+  link.href=URL.createObjectURL(blob);
+  link.download=filename;
   document.body.appendChild(link);
   link.click();
   document.body.removeChild(link);
 }
-
 </script>
+
 </body>
 </html>
