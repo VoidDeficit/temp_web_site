@@ -2,18 +2,18 @@
 <html lang="de">
 <head>
 <meta charset="UTF-8">
-<title>Dynamische Textbausteine mit User/Group</title>
+<title>Dynamische Textbausteine mit editierbaren Variablen</title>
 <style>
 body { font-family: sans-serif; margin: 2em; }
 label { display:block; margin-top: 1em; }
-input { width: 100%; margin-top: 0.3em; padding: 0.3em; }
+input, textarea { width: 100%; margin-top: 0.3em; padding: 0.3em; }
 #titleBox, #preview { border: 1px solid #aaa; padding: 1em; margin-top: 1em; white-space: pre-wrap; }
 button { margin-top: 0.5em; }
 </style>
 </head>
 <body>
 
-<h1>Dynamische Textbausteine (User/Group + Server)</h1>
+<h1>Dynamische Textbausteine (mit editierbaren Variablen)</h1>
 
 <label for="templateSelect">Vorlage auswählen:</label>
 <select id="templateSelect"></select>
@@ -30,16 +30,14 @@ button { margin-top: 0.5em; }
 <button onclick="downloadCSV()">CSV herunterladen</button>
 
 <script>
-// Templates mit User-Group-Paaren
 const templates = [
   { 
     name: "Rechnung", 
-    title: "Rechnung für {{name}} - Ticket {{ticket nr}}", 
-    text: "Sehr geehrte/r {{name}},\nHiermit erhalten Sie die Rechnung für {{server}} über {{betrag}} Euro.\n\nMit freundlichen Grüßen\n{{firma tews}}", 
+    title: "Rechnung für {{user}} - Ticket {{ticket nr}}", 
+    text: "Sehr geehrte/r {{user}},\nHiermit erhalten Sie die Rechnung für {{server}} über {{betrag}} Euro.\n\nMit freundlichen Grüßen\n{{firma tews}}", 
     fields: {
-      server: { value: "", editable: true },   // Eingabe mehrerer Server
-      name:   { value: "Kunde X", editable: false }, // Platzhaltername nur für Titel/Text
-      betrag: { value: "100", editable: true },
+      server: { value: "", editable: true },
+      betrag: { value: "", editable: true },
       firma_tews: { value: "Tews GmbH", editable: false }
     },
     pairs: [
@@ -61,19 +59,65 @@ templates.forEach((t,i)=>{
   select.appendChild(opt);
 });
 
+function sanitizeKey(key){ return key.replace(/ /g,'_'); }
+function unsanitizeKey(key){ return key.replace(/_/g,' '); }
+
+function collectAllPlaceholders(t){
+  const regex = /{{\s*([a-zA-Z0-9_äöüÄÖÜß ]+)\s*}}/g;
+  const set = new Set();
+  (t.title+t.text).replace(regex,(m,k)=>set.add(k.trim()));
+  return Array.from(set);
+}
+
 function buildFormForTemplate(t){
   form.innerHTML = '';
+  const allKeys = new Set();
+
+  // aus fields
   for(const key in t.fields){
     const field = t.fields[key];
     if(field.editable){
+      allKeys.add(key);
       const label = document.createElement('label');
-      label.textContent = key + (key==='server' ? ' (mehrere durch Komma trennen)' : '') + ':';
+      label.textContent = unsanitizeKey(key) + ((key==='server') ? ' (mehrere durch Komma trennen)' : '') + ':';
       const input = document.createElement('input');
       input.name = key;
       input.value = field.value || '';
       form.appendChild(label);
       form.appendChild(input);
     }
+  }
+
+  // aus title/text
+  collectAllPlaceholders(t).forEach(key=>{
+    const inputName = sanitizeKey(key);
+    if(!allKeys.has(inputName)){
+      allKeys.add(inputName);
+      const label = document.createElement('label');
+      label.textContent = key + ':';
+      const input = document.createElement('input');
+      input.name = inputName;
+      input.value = '';
+      form.appendChild(label);
+      form.appendChild(input);
+    }
+  });
+
+  // aus pairs
+  if(t.pairs && t.pairs.length>0){
+    Object.keys(t.pairs[0]).forEach(k=>{
+      if(!allKeys.has(k)){
+        allKeys.add(k);
+        const label=document.createElement('label');
+        label.textContent=k+": (aus pairs, nicht editierbar)";
+        const input=document.createElement('input');
+        input.name=k;
+        input.value='';
+        input.disabled=true;
+        form.appendChild(label);
+        form.appendChild(input);
+      }
+    });
   }
 }
 
@@ -84,74 +128,66 @@ select.addEventListener('change',()=>{
 
 buildFormForTemplate(templates[0]);
 
-function parseMultipleValues(value){ 
-  return value.split(',').map(s=>s.trim()).filter(s=>s); 
-}
+function parseMultipleValues(value){ return value.split(',').map(s=>s.trim()).filter(s=>s); }
 
 function fillPlaceholders(templateStr, data){
   return templateStr.replace(/{{\s*([a-zA-Z0-9_äöüÄÖÜß ]+)\s*}}/g,(m,k)=>{
-    return data[k]!==undefined?data[k]:m;
+    const key=sanitizeKey(k.trim());
+    return data[key]!==undefined?data[key]:m;
   });
 }
 
 function updatePreview(){
   const t=templates[select.value];
   const data={};
-  [...form.elements].forEach(el=>{ if(el.name) data[el.name]=el.value; });
-  // Nicht-editierbare Felder übernehmen
-  for(const key in t.fields){
-    if(!t.fields[key].editable) data[key]=t.fields[key].value;
-  }
+  [...form.elements].forEach(el=>{ if(el.name && !el.disabled) data[el.name]=el.value; });
+  for(const key in t.fields){ if(!t.fields[key].editable) data[key]=t.fields[key].value; }
 
-  // Titel & Text nur einmal
   titleBox.innerText = fillPlaceholders(t.title,data);
-  preview.innerText  = fillPlaceholders(t.text,data);
+  preview.innerText = fillPlaceholders(t.text,data);
 }
 
 function downloadCSV(){
-  const t = templates[select.value];
-  const data = {};
-  [...form.elements].forEach(el => { if(el.name) data[el.name] = el.value; });
-  for(const key in t.fields){ 
-    if(!t.fields[key].editable) data[key] = t.fields[key].value; 
+  const t=templates[select.value];
+  const data={};
+  [...form.elements].forEach(el=>{ if(el.name && !el.disabled) data[el.name]=el.value; });
+  for(const key in t.fields){ if(!t.fields[key].editable) data[key]=t.fields[key].value; }
+
+  const servers=parseMultipleValues(data.server||'');
+
+  // Sammle alle Felder
+  const csvFields=new Set(["server"]);
+  Object.keys(t.fields).forEach(f=>{ if(f!=="server") csvFields.add(unsanitizeKey(f)); });
+  collectAllPlaceholders(t).forEach(k=>csvFields.add(k));
+  if(t.pairs && t.pairs.length>0){
+    Object.keys(t.pairs[0]).forEach(k=>csvFields.add(k));
   }
 
-  const servers = parseMultipleValues(data.server || '');
-
-  // Sammle alle möglichen Felder aus fields + pairs
-  const csvFields = ["server"];
-  Object.keys(t.fields).forEach(f => {
-    if(f !== "server") csvFields.push(f.replace(/_/g," ")); // Unterstriche → Leerzeichen
-  });
-  if(t.pairs && t.pairs.length > 0){
-    Object.keys(t.pairs[0]).forEach(k=>{
-      if(!csvFields.includes(k)) csvFields.push(k);
-    });
-  }
-
-  const csvLines=[csvFields.join(';')];
+  const header=Array.from(csvFields);
+  const csvLines=[header.join(';')];
 
   servers.forEach(server=>{
     if(t.pairs && t.pairs.length>0){
       t.pairs.forEach(pair=>{
-        const row = csvFields.map(field=>{
+        const row=header.map(field=>{
           if(field==="server") return server;
-          // zuerst aus pair, sonst aus data
-          return pair[field]!==undefined ? pair[field] : (data[field.replace(/ /g,"_")] || '');
+          if(pair[field]!==undefined) return pair[field];
+          const key=sanitizeKey(field);
+          return data[key]||'';
         });
         csvLines.push(row.join(';'));
       });
     } else {
-      // Falls keine pairs definiert sind
-      const row = csvFields.map(field=>{
+      const row=header.map(field=>{
         if(field==="server") return server;
-        return data[field.replace(/ /g,"_")] || '';
+        const key=sanitizeKey(field);
+        return data[key]||'';
       });
       csvLines.push(row.join(';'));
     }
   });
 
-  const bom="\uFEFF"; // UTF-8 BOM für Excel
+  const bom="\uFEFF";
   const blob=new Blob([bom+csvLines.join('\n')],{type:'text/csv;charset=utf-8;'});
   const link=document.createElement('a');
   link.href=URL.createObjectURL(blob);
