@@ -19,12 +19,15 @@ const templates = [
                    },
       firma:       { value:"Tews GmbH", editable:false, multi:false, repeat:false, perRepeat:false, options:null, conditions:[] },
       location:    { value:"", editable:true, multi:false, repeat:false, perRepeat:false, ref:"stage", conditions:[] },
+
+      // Felder die für jeden Server angezeigt werden
       test_repeat: { value:"", editable:true, multi:false, repeat:false, perRepeat:true, options:["optA","optB","optC"], conditions:[] },
-      server: { value:"", editable:true, multi:false, repeat:false, perRepeat:true, conditions:[] }            
+      server:      { value:"", editable:true, multi:true, repeat:true, perRepeat:false } // Eingabe: server1,server2
     },
 
     fields_csv: {
-      server_uname:   { ref:"server", editable:true, repeat:true, multi:true, conditions:[] },
+      // CSV bekommt server_uname automatisch vom server-Feld
+      server_uname: { ref:"server", editable:false, repeat:true, multi:true, conditions:[] },
       kunde:   { repeat:false, multi:false, conditions:[] },
       betrag:  { repeat:false, multi:false, conditions:[] },
       user:    {},
@@ -39,6 +42,7 @@ const templates = [
       firma:   { repeat:false, multi:false, conditions:[] },
       group:   {}
     },
+
     pairBy: "proxy",
     pairs: [
       { user:"example_user1", group:"example_group1", editable:false, perRepeat:true },
