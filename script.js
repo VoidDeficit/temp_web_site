@@ -188,10 +188,12 @@ select.addEventListener('change', () => {
 
 buildForm(templates[0]);
 
-// Vorschau
+// Vorschau / Daten für Vorlage aufbereiten
 function updatePreview() {
   const t = templates[select.value];
   const data = {};
+
+  // Alle Formularwerte sammeln
   [...form.elements].forEach(el => {
     if (!el.name) return;
     if (el.tagName === "SELECT" && el.multiple) {
@@ -201,25 +203,27 @@ function updatePreview() {
     }
   });
 
-  // Conditions anwenden
+  // Conditions aus fields_vorlage anwenden
   for (const key in t.fields_vorlage) {
     const f = t.fields_vorlage[key];
-    if (f.conditions) {
-      f.conditions.forEach(cond => {
-        if (data[cond.key] === cond.value) {
-          data[key] = cond.set;
-        } else if (data[key] === undefined) {
-          data[key] = f.value || '';
+    if (f.conditions && f.conditions.length) {
+      for (const c of f.conditions) {
+        if (data[c.key] === c.value) {
+          data[key] = c.set;
+          break; // erste passende Condition übernehmen
         }
-      });
-    } else {
-      if (data[key] === undefined) data[key] = f.value || '';
+      }
+    }
+    // Falls keine Condition greift, Standardwert verwenden
+    if (data[key] === undefined) {
+      data[key] = f.value || '';
     }
   }
 
   titleBox.innerText = fillPlaceholders(t.title, data);
   preview.innerText = fillPlaceholders(t.text, data);
 }
+
 
 
 // CSV Export
