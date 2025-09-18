@@ -242,111 +242,137 @@ select.addEventListener('change', () => {
 
 buildForm(templates[0]);
 
-// Vorschau aktualisieren
-// Title und Text aktualisieren
+// Vorschau aktualisieren (neu: perRepeat-aware conditions für proxy usw.)
 function updatePreview() {
   const t = templates[select.value];
   const data = {};
 
-  // Alle Formularwerte einsammeln
+  // Alle Formularwerte einsammeln (global)
   [...form.elements].forEach(el => {
     if (!el.name) return;
-    let val;
-    if (el.tagName === "SELECT" && el.multiple) {
-      val = Array.from(el.selectedOptions).map(o => o.value).join(',');
-    } else {
-      val = el.value;
-    }
-
-    // Multi-Feld für Title/Text: ',' → '_'
-    if ((t.fields_vorlage[el.name]?.multi || t.fields_csv[el.name]?.multi) && val) {
-      val = val.split(',').map(s => s.trim()).join('_');
-    }
-    data[el.name] = val;
+    const raw = readInputValue(el);
+    // Für Title/Text multi-Felder: ',' -> '_' (wie gewünscht)
+    const isMulti = (t.fields_vorlage[el.name]?.multi || t.fields_csv[el.name]?.multi);
+    data[el.name] = (isMulti && raw) ? raw.split(',').map(s => s.trim()).join('_') : raw;
   });
 
-  // Ref-Felder auflösen
-  for (const key in t.fields_vorlage) {
-    const f = t.fields_vorlage[key];
-    if (f.ref && data[f.ref] !== undefined) {
-      data[key] = data[f.ref];
+  // Hilfs: Condition-Check mit Modes
+  function checkCondition(value, cond) {
+    const checkVal = (value ?? "").toString();
+    const mode = cond.mode || "equals";
+    switch (mode) {
+      case "equals": return checkVal === cond.value;
+      case "contains": return checkVal.includes(cond.value);
+      case "startsWith": return checkVal.startsWith(cond.value);
+      case "endsWith": return checkVal.endsWith(cond.value);
+      case "regex":
+        try { return new RegExp(cond.value).test(checkVal); }
+        catch (e) { return false; }
+      default: return false;
     }
   }
-  for (const key in t.fields_csv) {
-    const f = t.fields_csv[key];
-    if (f.ref && data[f.ref] !== undefined) {
-      data[key] = data[f.ref];
-    }
-  }
 
-  // Conditions anwenden
-  function applyConditions(fieldKey, fieldDef) {
-    let val = data[fieldKey] ?? fieldDef.value ?? '';
-    if (fieldDef.conditions && fieldDef.conditions.length) {
-      for (const c of fieldDef.conditions) {
-        const checkVal = (data[c.key] ?? "").toString();
-        let match = false;
-
-        switch (c.mode || "equals") {
-          case "equals":
-            match = (checkVal === c.value);
-            break;
-          case "contains":
-            match = checkVal.includes(c.value);
-            break;
-          case "startsWith":
-            match = checkVal.startsWith(c.value);
-            break;
-          case "endsWith":
-            match = checkVal.endsWith(c.value);
-            break;
-          case "regex":
-            try {
-              match = new RegExp(c.value).test(checkVal);
-            } catch (e) { match = false; }
-            break;
-        }
-
-        if (match) {
-          val = c.set;
-          break; // erste passende Bedingung gewinnt
-        }
+  // Repeat-Feld bestimmen (nur ein repeat erlaubt)
+  const repeatFieldKey = Object.keys(t.fields_csv).find(k => t.fields_csv[k].repeat);
+  // get raw repeat values (not converted to underscores here because we need original values for comparisons)
+  let repeatValues = [];
+  if (repeatFieldKey) {
+    const repeatEl = form.querySelector(`[name='${repeatFieldKey}']`);
+    if (repeatEl) {
+      if (repeatEl.tagName === "SELECT" && repeatEl.multiple) {
+        repeatValues = Array.from(repeatEl.selectedOptions).map(o => o.value);
+      } else {
+        repeatValues = (readInputValue(repeatEl) || '').split(',').map(s => s.trim()).filter(Boolean);
       }
     }
-    return val;
   }
 
-  for (const key in t.fields_vorlage) {
-    data[key] = applyConditions(key, t.fields_vorlage[key]);
+  // Resolve simple refs for global preview (copy of earlier logic)
+  function resolveRefs(fields) {
+    for (const k in fields) {
+      const f = fields[k];
+      if (f && f.ref && data[f.ref] !== undefined) {
+        data[k] = data[f.ref];
+      }
+    }
   }
-  for (const key in t.fields_csv) {
-    data[key] = applyConditions(key, t.fields_csv[key]);
+  resolveRefs(t.fields_vorlage);
+  resolveRefs(t.fields_csv);
+
+  // Apply conditions, but be perRepeat-aware:
+  // - If a condition references a key that is perRepeat (defined in fields_vorlage or fields_csv),
+  //   apply the condition for each repeatValue and join results with '_' for preview.
+  function applyConditionsForPreview(fieldKey, fieldDef) {
+    // base value (could be already transformed e.g. multi->_)
+    let base = data[fieldKey] ?? fieldDef.value ?? '';
+
+    if (!fieldDef.conditions || !fieldDef.conditions.length) return base;
+
+    // if any condition references a perRepeat key -> do per-repeat evaluation
+    const hasPerRepeatCond = fieldDef.conditions.some(c => {
+      return (t.fields_vorlage[c.key]?.perRepeat) || (t.fields_csv[c.key]?.perRepeat);
+    });
+
+    if (hasPerRepeatCond && Array.isArray(repeatValues) && repeatValues.length) {
+      // evaluate for each repeat value
+      const results = repeatValues.map(rv => {
+        // find first condition that matches for this repeat value
+        for (const c of fieldDef.conditions) {
+          // determine compare value for this cond's key for this repeat:
+          // try per-repeat input first: `${c.key}_${rv}`, then fall back to global `data[c.key]`
+          const perInput = form.querySelector(`[name='${c.key}_${rv}']`);
+          const compareVal = perInput ? readInputValue(perInput) : ( (data[c.key] !== undefined) ? data[c.key] : (t.fields_vorlage[c.key]?.value ?? t.fields_csv[c.key]?.value ?? '') );
+          if (checkCondition(compareVal, c)) return c.set;
+        }
+        // no cond matched -> try existing per-repeat value for the target field itself (if exists)
+        const selfPer = form.querySelector(`[name='${fieldKey}_${rv}']`);
+        if (selfPer) return readInputValue(selfPer);
+        // else fallback to the repeat value itself or empty
+        return rv || '';
+      });
+      // for preview we join with '_' as requested
+      return results.join('_');
+    } else {
+      // non perRepeat: evaluate normally using global data
+      for (const c of fieldDef.conditions) {
+        const compareVal = data[c.key] !== undefined ? data[c.key] : (t.fields_vorlage[c.key]?.value ?? t.fields_csv[c.key]?.value ?? '');
+        if (checkCondition(compareVal, c)) {
+          return c.set;
+        }
+      }
+      return base;
+    }
   }
 
-  // Title und Text mit aktualisierten multi-Werten
+  // apply for all fields (vorlage + csv) so placeholders in title/text are filled
+  for (const k in t.fields_vorlage) data[k] = applyConditionsForPreview(k, t.fields_vorlage[k]);
+  for (const k in t.fields_csv) data[k] = applyConditionsForPreview(k, t.fields_csv[k]);
+
+  // Title und Text füllen
   titleBox.innerText = fillPlaceholders(t.title, data);
   preview.innerText = fillPlaceholders(t.text, data);
 
-  buildRepeatFields(t); // UI wiederholen
+  // rebuild perRepeat UI (so UI reflects current values)
+  buildRepeatFields(t);
 }
 
-// CSV Export
+// CSV Export (neu: perRepeat-aware condition evaluation für proxy etc.)
 function downloadCSV() {
   const t = templates[select.value];
   const data = {};
 
-  // Formularwerte lesen (select + inputs)
+  // Formularwerte lesen (global + repeat field raw)
   [...form.elements].forEach(el => {
     if (!el.name) return;
     data[el.name] = readInputValue(el);
   });
 
-  // ref-Felder auflösen (global)
+  // resolve simple refs globally
   function resolveRefs(fields) {
-    for (const key in fields) {
-      const f = fields[key];
+    for (const k in fields) {
+      const f = fields[k];
       if (f && f.ref && data[f.ref] !== undefined) {
-        data[key] = data[f.ref];
+        data[k] = data[f.ref];
       }
     }
   }
@@ -362,12 +388,28 @@ function downloadCSV() {
       if (repeatInput.tagName === "SELECT" && repeatInput.multiple) {
         repeatValues = Array.from(repeatInput.selectedOptions).map(o => o.value);
       } else {
-        repeatValues = (data[repeatFieldKey] || '').split(',').map(s => s.trim()).filter(s => s);
+        repeatValues = (data[repeatFieldKey] || '').split(',').map(s => s.trim()).filter(Boolean);
       }
     }
   }
 
-  // Spalten bestimmen
+  // Condition check helper
+  function checkCondition(value, cond) {
+    const checkVal = (value ?? "").toString();
+    const mode = cond.mode || "equals";
+    switch (mode) {
+      case "equals": return checkVal === cond.value;
+      case "contains": return checkVal.includes(cond.value);
+      case "startsWith": return checkVal.startsWith(cond.value);
+      case "endsWith": return checkVal.endsWith(cond.value);
+      case "regex":
+        try { return new RegExp(cond.value).test(checkVal); }
+        catch (e) { return false; }
+      default: return false;
+    }
+  }
+
+  // CSV fields header
   let csvFields = Object.keys(t.fields_csv);
   if (t.pairs && t.pairs.length > 0) {
     t.pairs.forEach(p => {
@@ -380,59 +422,73 @@ function downloadCSV() {
   const header = csvFields.map(f => unsanitizeKey(f));
   const csvLines = [header.join(';')];
 
-  repeatValues.forEach(val => {
-    let row = {};
-    if (repeatFieldKey) row[repeatFieldKey] = val;
+  // für jede Wiederholung eine Reihe (oder mehrere Reihen wenn pairs)
+  repeatValues.forEach(rv => {
+    let baseRow = {};
+    if (repeatFieldKey) baseRow[repeatFieldKey] = rv;
 
+    // füllen der csv-Felder
     csvFields.forEach(f => {
       if (f === repeatFieldKey) return;
 
-      // Prüfe perRepeat input first
-      const input = form.querySelector(`[name='${f}_${val}']`);
-      let valField;
-      if (input) {
-        valField = readInputValue(input);
-      } else {
-        // Wenn csv-Feld ref zu einer vorlage-perRepeat besitzt, hole perRepeat-Wert
-        const csvDef = t.fields_csv[f] || {};
-        if (csvDef.ref && csvDef.perRepeat) {
-          valField = data[`${csvDef.ref}_${val}`] ?? data[csvDef.ref] ?? t.fields_vorlage[csvDef.ref]?.value ?? '';
-        } else {
-          valField = data[f] ?? t.fields_csv[f]?.value ?? t.fields_vorlage[f]?.value ?? '';
+      // 1) perRepeat input (vorlage oder extra) z.B. fieldname_rv
+      const perInput = form.querySelector(`[name='${f}_${rv}']`);
+      if (perInput) {
+        baseRow[f] = readInputValue(perInput);
+        return;
+      }
+
+      const csvDef = t.fields_csv[f] || {};
+
+      // 2) if csv field has ref and is perRepeat, try the perRepeat ref input
+      if (csvDef.ref && csvDef.perRepeat) {
+        const refPer = form.querySelector(`[name='${csvDef.ref}_${rv}']`);
+        if (refPer) {
+          baseRow[f] = readInputValue(refPer);
+          return;
         }
       }
 
-      // Conditions prüfen (csv oder Vorlage)
+      // 3) evaluate conditions for this csv field:
       const conds = t.fields_csv[f]?.conditions ?? t.fields_vorlage[f]?.conditions;
       if (conds && conds.length) {
+        // if any condition references a perRepeat key, evaluate per this rv
+        let matched = false;
         for (const c of conds) {
-          if (data[c.key] === c.value) {
-            valField = c.set;
+          // obtain compare value (prefer perRepeat input for c.key)
+          const condPerInput = form.querySelector(`[name='${c.key}_${rv}']`);
+          const compareVal = condPerInput ? readInputValue(condPerInput) : (data[c.key] ?? t.fields_vorlage[c.key]?.value ?? t.fields_csv[c.key]?.value ?? '');
+          if (checkCondition(compareVal, c)) {
+            baseRow[f] = c.set;
+            matched = true;
             break;
           }
         }
+        if (matched) return;
       }
 
-      row[f] = valField;
+      // 4) fallback: global data or default from fields_csv or fields_vorlage
+      baseRow[f] = data[f] ?? t.fields_csv[f]?.value ?? t.fields_vorlage[f]?.value ?? '';
     });
 
-    // Pairs einfügen (pro Repeat)
+    // nun pairs (falls vorhanden)
     if (t.pairs && t.pairs.length > 0) {
       t.pairs.forEach((pair, i) => {
-        let pairRow = { ...row };
-        for (const key in pair) {
-          if (["editable", "perRepeat"].includes(key)) continue;
-          const el = form.querySelector(`[name='pair_${i}_${key}_${val}']`);
-          pairRow[key] = el ? readInputValue(el) : pair[key];
+        let pairRow = { ...baseRow };
+        for (const k in pair) {
+          if (["editable", "perRepeat"].includes(k)) continue;
+          // per-pair perRepeat input if exists
+          const el = form.querySelector(`[name='pair_${i}_${k}_${rv}']`);
+          pairRow[k] = el ? readInputValue(el) : pair[k];
         }
         csvLines.push(csvFields.map(f => pairRow[f] || '').join(';'));
       });
     } else {
-      csvLines.push(csvFields.map(f => row[f] || '').join(';'));
+      csvLines.push(csvFields.map(f => baseRow[f] || '').join(';'));
     }
   });
 
-  // Dateiname dynamisch (multi -> _)
+  // filename (multi -> _)
   let filename = t.filename || 'daten.csv';
   filename = filename.replace(/{{\s*([a-zA-Z0-9_]+)\s*}}/g, (m, key) => {
     let valFile = data[key] || '';

@@ -10,7 +10,7 @@ const templates = [
       ticket_nr:  { value:"",              editable:true,  multi:false, repeat:false, perRepeat:false, options:null,              conditions:[] },
       kunde:      { value:"",              editable:true,  multi:false, repeat:false, perRepeat:false, options:null,              conditions:[] },
       betrag:     { value:"100",           editable:true,  multi:false, repeat:false, perRepeat:false, options:null,              conditions:[] },
-      stage:      { value:"",              editable:true,  multi:false, repeat:false, perRepeat:false, options:null,              conditions:[] },
+      stage:      { value:"",              editable:true,  multi:false, repeat:false, perRepeat:true, options:null,              conditions:[] },
       stage_name: { value:"",              editable:true,  multi:false, repeat:false, perRepeat:false,
                     conditions: [
                     { key: "stage", value: "Abbau", set: "am Abbau", mode: "equals" },
@@ -18,7 +18,7 @@ const templates = [
                     { key: "stage", value: "^Tr", set: "Regex Match", mode: "regex" }
                     ]
                   },
-      firma_tews: { value:"Tews GmbH",     editable:false, multi:false, repeat:false, perRepeat:false, options:null,              conditions:[] },
+      firma: { value:"Tews GmbH",     editable:false, multi:false, repeat:false, perRepeat:false, options:null,              conditions:[] },
       location:   { value:"",              editable:true,  multi:false, repeat:false, perRepeat:false, ref:"stage",             conditions:[] },
       // hier die korrekte options-Definition (nicht doppelt, kein null)
       test_repeat:{ value:"",              editable:true,  multi:false, repeat:false, perRepeat:true,  options:["optA","optB","optC"], conditions:[] }
@@ -28,9 +28,14 @@ const templates = [
       uname:     {  editable:true, repeat:true,  multi:true,  conditions:[] },
       kunde:     { repeat:false, multi:false, conditions:[] },
       betrag:    { repeat:false, multi:false, conditions:[] },
-      proxy:     { repeat:false, multi:false, conditions:[] },
+      proxy:     { repeat:false, multi:false, conditions: [
+                    { key: "stage", value: "Abbau", set: "proxy1", mode: "equals" },
+                    { key: "stage", value: "bau", set: "proxy2", mode: "contains" },
+                    { key: "stage", value: "^Tr", set: "proxy3", mode: "regex" }
+                    ]
+                  },
       test:      { ref:"test_repeat", repeat:false, multi:false, perRepeat:true, conditions:[] },
-      firma_tews: { repeat:false, multi:false, conditions:[] }
+      firma: { repeat:false, multi:false, conditions:[] }
     },
 
     pairs: [
