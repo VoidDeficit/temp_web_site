@@ -107,78 +107,81 @@ function buildForm(t) {
 }
 
 // Repeat-Felder (per Repeat-Wert) inkl. Pairs
+// Repeat-Felder (per Repeat-Wert) inkl. Pairs
 function buildRepeatFields(t) {
-    const old = form.querySelectorAll('.dynamic-repeat');
-    old.forEach(el => el.remove());
+  const old = form.querySelectorAll('.dynamic-repeat');
+  old.forEach(el => el.remove());
 
-    const repeatFieldKey = Object.keys(t.fields_csv).find(k => t.fields_csv[k].repeat);
-    if (!repeatFieldKey) return;
-    const repeatInput = form.querySelector(`[name='${repeatFieldKey}']`);
+  const repeatFieldKey = Object.keys(t.fields_csv).find(k => t.fields_csv[k].repeat);
+  if (!repeatFieldKey) return;
+  const repeatInput = form.querySelector(`[name='${repeatFieldKey}']`);
 
-    let repeatValues = [];
-    if (repeatInput) {
-        if (repeatInput.tagName === "SELECT" && repeatInput.multiple) {
-            repeatValues = Array.from(repeatInput.selectedOptions).map(o => o.value);
-        } else {
-            repeatValues = (repeatInput.value || '').split(',').map(s => s.trim()).filter(s => s);
-        }
+  let repeatValues = [];
+  if (repeatInput) {
+    if (repeatInput.tagName === "SELECT" && repeatInput.multiple) {
+      repeatValues = Array.from(repeatInput.selectedOptions).map(o => o.value);
+    } else {
+      repeatValues = (repeatInput.value || '').split(',').map(s => s.trim()).filter(s => s);
     }
-    if (!repeatValues.length) return;
+  }
+  if (!repeatValues.length) return;
 
-    repeatValues.forEach(val => {
-        const div = document.createElement('div');
-        div.className = 'dynamic-repeat';
+  repeatValues.forEach(val => {
+    const div = document.createElement('div');
+    div.className = 'dynamic-repeat';
 
-        // editable perRepeat fields aus fields_vorlage UND fields_csv
-        for (const key in {...t.fields_vorlage, ...t.fields_csv}) {
-            const f = {...t.fields_vorlage, ...t.fields_csv}[key];
-            if (f.editable && f.perRepeat) {
-                const label = document.createElement('label');
-                label.textContent = `${unsanitizeKey(key)} für ${val}` + (f.multi ? ' (mehrere durch Komma)' : '') + ':';
+    // Alle perRepeat Felder aus fields_vorlage und fields_csv
+    const allFields = {...t.fields_vorlage, ...t.fields_csv};
+    for (const key in allFields) {
+      const f = allFields[key];
+      if (!f.perRepeat || !f.editable) continue;
 
-                let input;
-                if (f.options && Array.isArray(f.options)) {
-                    input = document.createElement('select');
-                    if (f.multi) input.multiple = true;
-                    f.options.forEach(optVal => {
-                        const opt = document.createElement('option');
-                        opt.value = optVal;
-                        opt.textContent = optVal;
-                        if (optVal === f.value) opt.selected = true;
-                        input.appendChild(opt);
-                    });
-                } else {
-                    input = document.createElement('input');
-                    input.type = 'text';
-                    input.value = f.value || '';
-                }
+      const label = document.createElement('label');
+      label.textContent = `${unsanitizeKey(key)} für ${val}` + (f.multi ? ' (mehrere durch Komma)' : '') + ':';
 
-                input.name = `${key}_${val}`;
-                div.appendChild(label);
-                div.appendChild(input);
-            }
+      let input;
+      if (f.options && Array.isArray(f.options)) {
+        input = document.createElement('select');
+        if (f.multi) input.multiple = true;
+        f.options.forEach(optVal => {
+          const opt = document.createElement('option');
+          opt.value = optVal;
+          opt.textContent = optVal;
+          if (optVal === f.value) opt.selected = true;
+          input.appendChild(opt);
+        });
+      } else {
+        input = document.createElement('input');
+        input.type = 'text';
+        input.value = f.value || '';
+      }
+
+      input.name = `${key}_${val}`;
+      div.appendChild(label);
+      div.appendChild(input);
+    }
+
+    // Editable Pairs perRepeat
+    if (t.pairs && t.pairs.length > 0) {
+      t.pairs.forEach((pair, i) => {
+        if (!pair.editable) return;
+        for (const key in pair) {
+          if (["editable", "perRepeat"].includes(key)) continue;
+          const label = document.createElement('label');
+          label.textContent = `${unsanitizeKey(key)} für ${val} (Pair #${i + 1})`;
+          const input = document.createElement('input');
+          input.name = `pair_${i}_${key}_${val}`;
+          input.value = pair[key] || '';
+          div.appendChild(label);
+          div.appendChild(input);
         }
+      });
+    }
 
-        // editable pairs perRepeat
-        if (t.pairs && t.pairs.length > 0) {
-            t.pairs.forEach((pair, i) => {
-                if (!pair.editable) return;
-                for (const key in pair) {
-                    if (["editable", "perRepeat"].includes(key)) continue;
-                    const label = document.createElement('label');
-                    label.textContent = `${unsanitizeKey(key)} für ${val} (Pair #${i + 1})`;
-                    const input = document.createElement('input');
-                    input.name = `pair_${i}_${key}_${val}`;
-                    input.value = pair[key] || '';
-                    div.appendChild(label);
-                    div.appendChild(input);
-                }
-            });
-        }
-
-        form.appendChild(div);
-    });
+    form.appendChild(div);
+  });
 }
+
 
 // Template change
 select.addEventListener('change', () => {
@@ -188,7 +191,7 @@ select.addEventListener('change', () => {
 
 buildForm(templates[0]);
 
-// Vorschau
+// Vorschau aktualisieren
 function updatePreview() {
     const t = templates[select.value];
     const data = {};
@@ -201,26 +204,50 @@ function updatePreview() {
         }
     });
 
-    // Conditions für Vorlagenfelder
+    // Conditions für Vorlagenfelder ohne Repeat
     for (const key in t.fields_vorlage) {
         const f = t.fields_vorlage[key];
-        if (f.conditions && f.conditions.length) {
+        if (!f.perRepeat && f.conditions) {
             for (const cond of f.conditions) {
                 if (data[cond.key] === cond.value) {
                     data[key] = cond.set;
                     break;
-                } else if (data[key] === undefined) {
-                    data[key] = f.value || '';
                 }
             }
-        } else {
-            if (data[key] === undefined) data[key] = f.value || '';
+        } else if (!f.perRepeat && data[key] === undefined) {
+            data[key] = f.value || '';
         }
     }
+
+    // Conditions für perRepeat Felder
+    const repeatFieldKey = Object.keys(t.fields_csv).find(k => t.fields_csv[k].repeat);
+    let repeatValues = [];
+    if (repeatFieldKey && data[repeatFieldKey]) {
+        repeatValues = data[repeatFieldKey].split(',').map(s => s.trim()).filter(s => s);
+    }
+
+    repeatValues.forEach(val => {
+        for (const key in {...t.fields_vorlage, ...t.fields_csv}) {
+            const f = {...t.fields_vorlage, ...t.fields_csv}[key];
+            if (!f.perRepeat || !f.conditions) continue;
+
+            const inputName = `${key}_${val}`;
+            let input = form.querySelector(`[name='${inputName}']`);
+            if (!input) continue;
+
+            f.conditions.forEach(cond => {
+                // pro Repeat-Wert prüfen, falls der Repeat-Wert dem Condition-Key entspricht
+                if (cond.key === val) {
+                    input.value = cond.set;
+                }
+            });
+        }
+    });
 
     titleBox.innerText = fillPlaceholders(t.title, data);
     preview.innerText = fillPlaceholders(t.text, data);
 }
+
 
 // CSV Export
 function downloadCSV() {
@@ -283,15 +310,14 @@ function downloadCSV() {
                 valField = data[f] || t.fields_csv[f]?.value || '';
             }
 
-            // Conditions prüfen (csv oder Vorlage)
+            // Conditions prüfen (perRepeat)
             const conds = t.fields_csv[f]?.conditions ?? t.fields_vorlage[f]?.conditions;
             if (conds && conds.length) {
-                for (const c of conds) {
-                    if (data[c.key] === c.value) {
+                conds.forEach(c => {
+                    if (c.key === val) { // Condition pro Repeat-Wert
                         valField = c.set;
-                        break;
                     }
-                }
+                });
             }
             row[f] = valField;
         });
@@ -311,6 +337,7 @@ function downloadCSV() {
             csvLines.push(csvFields.map(f => row[f] || '').join(';'));
         }
     });
+
 
     // Dynamischer Dateiname
     let filename = t.filename || 'daten.csv';
