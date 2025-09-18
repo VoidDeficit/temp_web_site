@@ -197,10 +197,27 @@ function updatePreview() {
       data[el.name] = el.value;
     }
   });
-  for (const key in t.fields_vorlage) { if (!t.fields_vorlage[key].editable) data[key] = t.fields_vorlage[key].value; }
+
+  // Conditions anwenden
+  for (const key in t.fields_vorlage) {
+    const f = t.fields_vorlage[key];
+    if (f.conditions) {
+      f.conditions.forEach(cond => {
+        if (data[cond.key] === cond.value) {
+          data[key] = cond.set;
+        } else if (data[key] === undefined) {
+          data[key] = f.value || '';
+        }
+      });
+    } else {
+      if (data[key] === undefined) data[key] = f.value || '';
+    }
+  }
+
   titleBox.innerText = fillPlaceholders(t.title, data);
   preview.innerText = fillPlaceholders(t.text, data);
 }
+
 
 // CSV Export
 function downloadCSV() {
