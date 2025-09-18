@@ -276,7 +276,7 @@ function downloadCSV() {
   function resolveRefs(fields) {
     for (const k in fields) {
       const f = fields[k];
-      if (f && f.ref && data[f.ref] !== undefined) {
+      if (f?.ref && data[f.ref] !== undefined) {
         data[k] = data[f.ref];
       }
     }
@@ -284,82 +284,68 @@ function downloadCSV() {
   resolveRefs(t.fields_vorlage);
   resolveRefs(t.fields_csv);
 
-  const repeatFieldKey = Object.keys(t.fields_csv).find(k => t.fields_csv[k].repeat);
+  // repeatValues bestimmen
+  const repeatFieldKey = Object.keys(t.fields_csv).find(k => t.fields_csv[k]?.repeat);
   let repeatValues = [''];
   if (repeatFieldKey && data[repeatFieldKey]) {
     repeatValues = data[repeatFieldKey].split(',').map(s => s.trim()).filter(Boolean);
   }
 
+  // Hilfs: Condition prüfen
   function checkCondition(value, cond) {
     const val = (value ?? "").toString();
     switch (cond.mode) {
       case "equals": return val === cond.value;
       case "contains": return val.includes(cond.value);
-      case "regex":
-        try { return new RegExp(cond.value, 'i').test(val); } catch(e) { return false; }
+      case "startsWith": return val.startsWith(cond.value);
+      case "endsWith": return val.endsWith(cond.value);
+      case "regex": try { return new RegExp(cond.value, 'i').test(val); } catch(e){ return false; }
       default: return false;
     }
   }
 
-  // Hilfsfunktion: Conditions anwenden (split + uniqueResult + perRepeat)
-  function applyConditions(fieldKey, fieldDef, repeatVal = null) {
-    let base = data[fieldKey] ?? fieldDef.value ?? '';
-    if (!fieldDef.conditions?.length) return base;
+  function applyConditions(key, def, repeatVal = null) {
+    let base = data[key] ?? def.value ?? '';
+    if (!def.conditions?.length) return base;
 
     const results = [];
-
-    fieldDef.conditions.forEach(c => {
-      let source = data[c.key] ?? '';
-      if (repeatVal) source = repeatVal;
-
-      let parts = [source];
-      if (c.split) parts = source.split(',').map(s => s.trim()).filter(Boolean);
-
-      parts.forEach(p => {
-        if (checkCondition(p, c)) results.push(c.set);
-      });
+    def.conditions.forEach(c => {
+      let source = repeatVal ?? (data[c.key] ?? '');
+      let parts = c.split ? source.split(',').map(s=>s.trim()).filter(Boolean) : [source];
+      parts.forEach(p => { if (checkCondition(p, c)) results.push(c.set); });
     });
 
-    if (fieldDef.uniqueResult) return [...new Set(results)].join(' ');
+    if (def.uniqueResult) return [...new Set(results)].join(' ');
     return results.join(' ');
   }
 
-  // CSV-Felder inklusive Pairs
-  let csvFields = Object.keys(t.fields_csv);
-  if (t.pairs?.length) {
-    t.pairs.forEach(p => {
-      Object.keys(p).forEach(k => {
-        if (!["editable","perRepeat","conditions"].includes(k) && !csvFields.includes(k)) csvFields.push(k);
-      });
-    });
-  }
+  // CSV-Felder + Header vorbereiten
+  const csvFields = [...new Set([
+    ...Object.keys(t.fields_csv),
+    ...(t.pairs?.length ? t.pairs.flatMap(p => Object.keys(p).filter(k => !["editable","perRepeat"].includes(k))) : [])
+  ])];
+  const csvLines = [csvFields.map(f => unsanitizeKey(f)).join(';')];
 
-  const header = csvFields.map(f => unsanitizeKey(f));
-  const csvLines = [header.join(';')];
-
+  // CSV-Zeilen erzeugen
   repeatValues.forEach(rv => {
-    // Basis-Zeile vorbereiten
     const baseRow = {};
     if (repeatFieldKey) baseRow[repeatFieldKey] = rv;
 
+    // Felder aus fields_csv + fields_vorlage
     csvFields.forEach(f => {
       if (f === repeatFieldKey) return;
 
-      const fieldDef = t.fields_csv[f] ?? t.fields_vorlage[f] ?? {};
-      if (fieldDef.perRepeat) {
-        baseRow[f] = applyConditions(f, fieldDef, rv) || '';
-      } else {
-        baseRow[f] = applyConditions(f, fieldDef) || (data[f] ?? (fieldDef.value ?? ''));
-      }
+      const def = t.fields_csv[f] ?? t.fields_vorlage[f] ?? {};
+      if (def.perRepeat) baseRow[f] = applyConditions(f, def, rv) || '';
+      else baseRow[f] = applyConditions(f, def) || (data[f] ?? (def.value ?? ''));
     });
 
-    // Pairs durchlaufen für diesen Repeat
+    // Pairs pro Repeat
     if (t.pairs?.length) {
       t.pairs.forEach(pair => {
         const row = { ...baseRow };
         Object.keys(pair).forEach(k => {
-          if (["editable","perRepeat","conditions"].includes(k)) return;
-          row[k] = pair[k];
+          if (!["editable","perRepeat","conditions"].includes(k)) row[k] = pair[k];
         });
         csvLines.push(csvFields.map(f => row[f] || '').join(';'));
       });
@@ -368,17 +354,17 @@ function downloadCSV() {
     }
   });
 
-  // CSV-Filename mit Platzhaltern
+  // Dateiname mit Platzhaltern
   let filename = t.filename || 'daten.csv';
-  filename = filename.replace(/{{\s*([a-zA-Z0-9_]+)\s*}}/g, (m, key) => {
-    const fieldDef = t.fields_csv[key] ?? t.fields_vorlage[key];
-    let val = applyConditions(key, fieldDef) || (data[key] ?? '');
-    if (fieldDef?.multi) val = val.split(',').map(s => s.trim()).join('_');
+  filename = filename.replace(/{{\s*([a-zA-Z0-9_]+)\s*}}/g, (_, key) => {
+    const def = t.fields_csv[key] ?? t.fields_vorlage[key];
+    let val = applyConditions(key, def) || (data[key] ?? '');
+    if (def?.multi) val = val.split(',').map(s => s.trim()).join('_');
     return val;
   });
 
-  const bom = "\uFEFF";
-  const blob = new Blob([bom + csvLines.join('\n')], { type:'text/csv;charset=utf-8;' });
+  // CSV erzeugen
+  const blob = new Blob(["\uFEFF" + csvLines.join('\n')], { type:'text/csv;charset=utf-8;' });
   const link = document.createElement('a');
   link.href = URL.createObjectURL(blob);
   link.download = filename;

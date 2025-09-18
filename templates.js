@@ -19,11 +19,12 @@ const templates = [
                    },
       firma:       { value:"Tews GmbH", editable:false, multi:false, repeat:false, perRepeat:false, options:null, conditions:[] },
       location:    { value:"", editable:true, multi:false, repeat:false, perRepeat:false, ref:"stage", conditions:[] },
-      test_repeat: { value:"", editable:true, multi:false, repeat:false, perRepeat:true, options:["optA","optB","optC"], conditions:[] }
+      test_repeat: { value:"", editable:true, multi:false, repeat:false, perRepeat:true, options:["optA","optB","optC"], conditions:[] },
+      server: { value:"", editable:true, multi:false, repeat:false, perRepeat:true, conditions:[] }            
     },
 
     fields_csv: {
-      uname:   { editable:true, repeat:true, multi:true, conditions:[] },
+      server_uname:   { ref:"server", editable:true, repeat:true, multi:true, conditions:[] },
       kunde:   { repeat:false, multi:false, conditions:[] },
       betrag:  { repeat:false, multi:false, conditions:[] },
       user:    {},
