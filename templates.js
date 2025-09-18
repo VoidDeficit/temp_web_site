@@ -1,49 +1,39 @@
+// ==================== Templates ====================
 const templates = [
   {
     name: "Rechnung",
-    title: "Rechnung für {{kunde}} - Ticket {{ticket_nr}}",
-    text: "Sehr geehrte/r {{kunde}},\nRechnung für {{uname}} über {{betrag}} Euro.\n\nMit freundlichen Grüßen\n{{firma}}",
     filename: "Rechnung_{{proxy}}_{{kunde}}.csv",
-
-    // Platzhalter nur für Titel/Text
+    title: "Rechnung für {{kunde}} - Ticket {{ticket_nr}}",
+    text: "Sehr geehrte/r {{kunde}},\nRechnung für {{uname}} über {{betrag}} Euro.\n\nMit freundlichen Grüßen\n{{firma_tews}}",
+    
     fields_vorlage: {
-      ticket_nr: { value: "12345", editable: true },
-      kunde: { value: "", editable: true },
-      firma: { value: "Tews GmbH", editable: false }
+      uname: { value:"Server1,Server2", editable:true, multi:true, repeat:true, options:null, perRepeat:false, conditions:[] },
+      kunde: { value:"", editable:true, multi:false, repeat:false, options:null, perRepeat:false, conditions:[] },
+      betrag: { value:"100", editable:true, multi:false, repeat:false, options:null, perRepeat:false, conditions:[] },
+      proxy: { value:"", editable:true, multi:false, repeat:false, options:["proxy1","proxy2","proxy3"], perRepeat:true, conditions:[] },
+      stage: { value:"Abbau", editable:true, multi:false, repeat:false, options:["Abbau","Aufbau"], perRepeat:false, conditions:[] },
+      firma_tews: { value:"Tews GmbH", editable:false, multi:false, repeat:false, options:null, perRepeat:false, conditions:[] }
     },
 
-    // Felder für CSV
     fields_csv: {
-      uname: { value: "", editable: true, repeat: true }, // Repeat-Feld
-      betrag: { value: "100", editable: true },
-      proxy: { value: "", editable: true, options: ["proxy1", "proxy2", "proxy3"] }, // Dropdown
-      status: { value: "aktiv", editable: true, options: ["aktiv", "inaktiv"], perRepeat: true }, // perRepeat + Dropdown
-      gruppe: { value: "", editable: true, multi: false, perRepeat: true } // Multi-Auswahl
+      uname: { repeat:true, multi:true, conditions:[] },
+      kunde: { repeat:false, multi:false, conditions:[] },
+      betrag: { repeat:false, multi:false, conditions:[] },
+      proxy: { repeat:false, multi:false, conditions:[] },
+      stage: { 
+        repeat:false, 
+        multi:false, 
+        conditions:[ 
+          { key:"stage", value:"Abbau", setValue:"am Abbau" },  // Wenn stage=Abbau, CSV-Wert = "am Abbau"
+          { key:"stage", value:"Aufbau", setValue:"am Aufbau" } // Wenn stage=Aufbau, CSV-Wert = "am Aufbau"
+        ] 
+      },
+      firma_tews: { repeat:false, multi:false, conditions:[] }
     },
 
     pairs: [
-      { user: "user1", group: "group1", editable: true, perRepeat: true },
-      { user: "user2", group: "group2", editable: false, perRepeat: true }
+      { user: "example_user1", group: "example_group1", editable:false, perRepeat:true },
+      { user: "example_user2", group: "example_group2", editable:true, perRepeat:true }
     ]
-  },
-
-  {
-    name: "Server-Liste",
-    title: "Serverliste für {{kunde}}",
-    text: "Sehr geehrte/r {{kunde}},\nHier die Zugänge für Ihre Server:\n{{server}}",
-    filename: "Serverliste_{{kunde}}.csv",
-
-    fields_vorlage: {
-      kunde: { value: "", editable: true }
-    },
-
-    fields_csv: {
-      server: { value: "", editable: true, repeat: true }, // Repeat
-      os: { value: "Linux", editable: true, options: ["Linux", "Windows", "BSD"], perRepeat: true }, // Dropdown
-      ip: { value: "", editable: true, perRepeat: true },
-      admin: { value: "root", editable: false, perRepeat: true } // feste Werte
-    },
-
-    pairs: []
   }
 ];
