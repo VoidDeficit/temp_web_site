@@ -14,6 +14,7 @@ templates.forEach((t, i) => {
 function sanitizeKey(key) { return key.replace(/ /g, '_'); }
 function unsanitizeKey(key) { return key.replace(/_/g, ' '); }
 
+// Hilfs: Input/Select erzeugen (option unterstützt)
 function createInputForField(f, name, existingValue = undefined) {
   let input;
   if (f.options && Array.isArray(f.options)) {
@@ -41,6 +42,7 @@ function createInputForField(f, name, existingValue = undefined) {
   return input;
 }
 
+// Hilfs: Wert von einem Input sicher auslesen (selects + multiple)
 function readInputValue(el) {
   if (!el) return '';
   if (el.tagName === 'SELECT') {
@@ -78,9 +80,16 @@ function buildForm(t) {
 
   form.innerHTML = '';
 
+  // repeat master bestimmen
+  const repeatFieldKey = Object.keys({ ...t.fields_vorlage, ...t.fields_csv })
+    .find(k => (t.fields_vorlage[k]?.repeat || t.fields_csv[k]?.repeat));
+
+  // Normale Felder (ohne perRepeat, ohne repeat master)
   for (const key in t.fields_vorlage) {
     const f = t.fields_vorlage[key];
-    if (!f || f.perRepeat || f.editable === false) continue;
+    if (!f || f.perRepeat) continue;
+    if (key === repeatFieldKey) continue; // Master nicht doppelt anzeigen
+    if (f.editable === false) continue;
 
     const label = document.createElement('label');
     label.textContent = unsanitizeKey(key) + (f.multi ? ' (mehrere durch Komma)' : '') + ':';
@@ -89,22 +98,23 @@ function buildForm(t) {
     form.appendChild(input);
   }
 
-  const repeatFieldKey = Object.keys(t.fields_csv).find(k => t.fields_csv[k].repeat);
+  // Repeat-Master Feld einfügen
   if (repeatFieldKey) {
-    const f = t.fields_csv[repeatFieldKey];
-    if (f.editable === false) return;
-
-    const label = document.createElement('label');
-    label.textContent = unsanitizeKey(repeatFieldKey) + ' (mehrere durch Komma für CSV-Loop):';
-    const input = createInputForField(f, repeatFieldKey, prevValues[repeatFieldKey]);
-    form.appendChild(label);
-    form.appendChild(input);
-    input.addEventListener('input', () => buildRepeatFields(t));
-    input.addEventListener('change', () => buildRepeatFields(t));
+    const f = t.fields_vorlage[repeatFieldKey] ?? t.fields_csv[repeatFieldKey];
+    if (f.editable !== false) {
+      const label = document.createElement('label');
+      label.textContent = unsanitizeKey(repeatFieldKey) + ' (Kommagetrennt für Wiederholungen):';
+      const input = createInputForField(f, repeatFieldKey, prevValues[repeatFieldKey]);
+      form.appendChild(label);
+      form.appendChild(input);
+      input.addEventListener('input', () => buildRepeatFields(t));
+      input.addEventListener('change', () => buildRepeatFields(t));
+    }
   }
 
   buildRepeatFields(t);
 }
+
 
 // Repeat-Felder inkl. Pairs
 function buildRepeatFields(t) {
@@ -116,25 +126,28 @@ function buildRepeatFields(t) {
 
   form.querySelectorAll('.dynamic-repeat').forEach(el => el.remove());
 
-  const repeatInput = form.querySelector(`[name='server']`);
+  const repeatFieldKey = findRepeatMaster(t);
+  if (!repeatFieldKey) return;
+
+  const repeatInput = form.querySelector(`[name='${repeatFieldKey}']`);
   if (!repeatInput) return;
 
   const repeatValues = (repeatInput.value || '').split(',').map(s => s.trim()).filter(Boolean);
   if (!repeatValues.length) return;
 
-  repeatValues.forEach(serverVal => {
+  repeatValues.forEach(rv => {
     const div = document.createElement('div');
     div.className = 'dynamic-repeat';
 
     const allFields = { ...t.fields_vorlage, ...t.fields_csv };
     for (const key in allFields) {
       const f = allFields[key];
-      if (!f || !f.perRepeat || f.editable === false) continue;
+      if (!f || !f.perRepeat) continue;
 
       const label = document.createElement('label');
-      label.textContent = `${unsanitizeKey(key)} für ${serverVal}:`;
+      label.textContent = `${unsanitizeKey(key)} für ${rv}:`;
 
-      const inputName = `${key}_${serverVal}`;
+      const inputName = `${key}_${rv}`;
       const existingValue = prev[inputName] !== undefined ? prev[inputName] : (f.value || '');
       const input = createInputForField(f, inputName, existingValue);
 
@@ -148,10 +161,10 @@ function buildRepeatFields(t) {
         for (const key in pair) {
           if (["editable","perRepeat"].includes(key)) continue;
           const label = document.createElement('label');
-          label.textContent = `${unsanitizeKey(key)} für ${serverVal} (Pair #${i+1})`;
+          label.textContent = `${unsanitizeKey(key)} für ${rv} (Pair #${i+1})`;
           const input = document.createElement('input');
-          input.name = `pair_${i}_${key}_${serverVal}`;
-          input.value = prev[`pair_${i}_${key}_${serverVal}`] !== undefined ? prev[`pair_${i}_${key}_${serverVal}`] : pair[key] || '';
+          input.name = `pair_${i}_${key}_${rv}`;
+          input.value = prev[`pair_${i}_${key}_${rv}`] !== undefined ? prev[`pair_${i}_${key}_${rv}`] : pair[key] || '';
           div.appendChild(label);
           div.appendChild(input);
         }
@@ -223,7 +236,7 @@ function updatePreview() {
   function applyConditions(fieldKey, fieldDef) {
     let base = data[fieldKey] ?? fieldDef.value ?? '';
     if (!fieldDef.conditions?.length) return base;
-
+    
     if (fieldDef.split) {
       const sourceVal = data[fieldDef.key] ?? '';
       const parts = sourceVal.split(',').map(s => s.trim()).filter(Boolean);
@@ -252,33 +265,42 @@ function updatePreview() {
   preview.innerText = fillPlaceholders(t.text, data);
 }
 
-// CSV Download
 function downloadCSV() {
   const t = templates[select.value];
   const data = {};
 
+  // Formularwerte sammeln
   [...form.elements].forEach(el => {
     if (!el.name) return;
-    data[el.name] = el.tagName === "SELECT" && el.multiple
-      ? Array.from(el.selectedOptions).map(o => o.value).join(',')
-      : el.value;
+    if (el.tagName === "SELECT" && el.multiple) {
+      data[el.name] = Array.from(el.selectedOptions).map(o => o.value).join(',');
+    } else {
+      data[el.name] = el.value;
+    }
   });
 
+  // Refs auflösen
   function resolveRefs(fields) {
     for (const k in fields) {
       const f = fields[k];
-      if (f?.ref && data[f.ref] !== undefined) data[k] = data[f.ref];
+      if (f?.ref && data[f.ref] !== undefined) {
+        data[k] = data[f.ref];
+      }
     }
   }
   resolveRefs(t.fields_vorlage);
   resolveRefs(t.fields_csv);
 
-  const repeatFieldKey = Object.keys(t.fields_csv).find(k => t.fields_csv[k]?.repeat);
+  // --- Master für repeat finden ---
+  const repeatMasterKey = Object.keys(t.fields_vorlage)
+    .find(k => t.fields_vorlage[k]?.repeat);
+
   let repeatValues = [''];
-  if (repeatFieldKey && data[repeatFieldKey]) {
-    repeatValues = data[repeatFieldKey].split(',').map(s => s.trim()).filter(Boolean);
+  if (repeatMasterKey && data[repeatMasterKey]) {
+    repeatValues = data[repeatMasterKey].split(',').map(s => s.trim()).filter(Boolean);
   }
 
+  // Hilfs: Condition prüfen
   function checkCondition(value, cond) {
     const val = (value ?? "").toString();
     switch (cond.mode) {
@@ -306,25 +328,34 @@ function downloadCSV() {
     return results.join(' ');
   }
 
+  // CSV-Felder + Header vorbereiten
   const csvFields = [...new Set([
     ...Object.keys(t.fields_csv),
     ...(t.pairs?.length ? t.pairs.flatMap(p => Object.keys(p).filter(k => !["editable","perRepeat"].includes(k))) : [])
   ])];
-
   const csvLines = [csvFields.map(f => unsanitizeKey(f)).join(';')];
 
+  // --- CSV-Zeilen generieren ---
   repeatValues.forEach(rv => {
     const baseRow = {};
-    if (repeatFieldKey) baseRow[repeatFieldKey] = rv;
 
+    // Master-Feld setzen
+    if (repeatMasterKey) baseRow[repeatMasterKey] = rv;
+
+    // Alle Felder füllen
     csvFields.forEach(f => {
-      if (f === repeatFieldKey) return;
-
       const def = t.fields_csv[f] ?? t.fields_vorlage[f] ?? {};
-      if (def.perRepeat || def.repeat) baseRow[f] = applyConditions(f, def, rv) || '';
-      else baseRow[f] = applyConditions(f, def) || (data[f] ?? (def.value ?? ''));
+      if (def.perRepeat) {
+        baseRow[f] = data[`${f}_${rv}`] ?? applyConditions(f, def, rv) ?? '';
+      } else if (def.repeat) {
+        // repeat:true in CSV-Feldern übernimmt den Master-Wert
+        baseRow[f] = rv;
+      } else {
+        baseRow[f] = applyConditions(f, def) || (data[f] ?? (def.value ?? ''));
+      }
     });
 
+    // Pairs pro Repeat
     if (t.pairs?.length) {
       t.pairs.forEach(pair => {
         const row = { ...baseRow };
@@ -338,6 +369,7 @@ function downloadCSV() {
     }
   });
 
+  // Dateiname mit Platzhaltern
   let filename = t.filename || 'daten.csv';
   filename = filename.replace(/{{\s*([a-zA-Z0-9_]+)\s*}}/g, (_, key) => {
     const def = t.fields_csv[key] ?? t.fields_vorlage[key];
@@ -346,6 +378,7 @@ function downloadCSV() {
     return val;
   });
 
+  // CSV erzeugen
   const blob = new Blob(["\uFEFF" + csvLines.join('\n')], { type:'text/csv;charset=utf-8;' });
   const link = document.createElement('a');
   link.href = URL.createObjectURL(blob);
