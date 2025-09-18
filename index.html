@@ -222,11 +222,13 @@ function downloadCSV(){
     }
   }
 
+  // Repeat-Feld ermitteln
   const repeatFieldKey = Object.keys(t.fields).find(k=>t.fields[k].repeat);
   const repeatValues = repeatFieldKey ? (data[repeatFieldKey]||'').split(',').map(s=>s.trim()).filter(s=>s) : [''];
 
-  // Dynamische Spalten: alle fields + alle pair keys
-  let csvFields = Object.keys(t.fields).filter(f=>f!==repeatFieldKey);
+  // Spaltenreihenfolge: so wie in fields definiert
+  let csvFields = Object.keys(t.fields);
+  // + pairs dynamisch hinzufügen
   if(t.pairs && t.pairs.length>0){
     t.pairs.forEach(p=>{
       Object.keys(p).forEach(k=>{
@@ -236,23 +238,22 @@ function downloadCSV(){
       });
     });
   }
-  if(repeatFieldKey) csvFields.unshift(repeatFieldKey); // Repeat-Feld zuerst
+
   const header = csvFields.map(f=>unsanitizeKey(f));
   const csvLines=[header.join(';')];
 
   repeatValues.forEach(val=>{
     let row = {};
-    row[repeatFieldKey] = val;
+    if(repeatFieldKey) row[repeatFieldKey] = val;
 
     csvFields.forEach(f=>{
-      if(f!==repeatFieldKey){
-        // Per-Server Eingabe prüfen
-        const input = form.querySelector(`[name='${f}_${val}']`);
-        if(input) row[f] = input.value;
-        else {
-          // Sonst globales Feld oder vordefinierter Wert
-          row[f] = data[f] || '';
-        }
+      if(f===repeatFieldKey) return; // schon gesetzt
+      // Per-Server Eingabe prüfen
+      const input = form.querySelector(`[name='${f}_${val}']`);
+      if(input) row[f] = input.value;
+      else {
+        // Sonst globales Feld oder vordefinierter Wert
+        row[f] = data[f] || '';
       }
     });
 
@@ -272,7 +273,7 @@ function downloadCSV(){
     }
   });
 
-  // Dateiname dynamisch
+  // Dateiname dynamisch (mit Multi-Handling)
   let filename = t.filename || 'daten.csv';
   filename = filename.replace(/{{\s*([a-zA-Z0-9_]+)\s*}}/g,(m,key)=>{
     let val = data[key] || '';
@@ -291,6 +292,7 @@ function downloadCSV(){
   link.click();
   document.body.removeChild(link);
 }
+
 </script>
 
 </body>
