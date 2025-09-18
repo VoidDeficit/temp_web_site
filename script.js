@@ -25,42 +25,42 @@ function fillPlaceholders(str, data) {
 function buildForm(t) {
   form.innerHTML = '';
 
-  // normale Felder aus fields_vorlage
+  // Nicht-Repeat, editable fields
   for (const key in t.fields_vorlage) {
     const f = t.fields_vorlage[key];
-    if (!f.editable) continue; // editable:false nicht anzeigen
-    if (!f.repeat && !f.perRepeat) {
-      const label = document.createElement('label');
-      label.textContent = unsanitizeKey(key) + (f.multi ? ' (mehrere durch Komma)' : '') + ':';
-      let input;
-      if (f.options && Array.isArray(f.options)) {
-        input = document.createElement('select');
-        if (f.multi) input.multiple = true;
-        f.options.forEach(optVal => {
-          const opt = document.createElement('option');
-          opt.value = optVal;
-          opt.textContent = optVal;
-          if (optVal === f.value) opt.selected = true;
-          input.appendChild(opt);
-        });
-      } else {
-        input = document.createElement('input');
-        input.type = 'text';
-        input.value = f.value || '';
-      }
-      input.name = key;
-      form.appendChild(label);
-      form.appendChild(input);
+    if (!f.editable) continue;
+
+    const label = document.createElement('label');
+    label.textContent = unsanitizeKey(key) + (f.multi ? ' (mehrere durch Komma)' : '') + ':';
+
+    let input;
+    if (f.options && Array.isArray(f.options)) {
+      input = document.createElement('select');
+      if (f.multi) input.multiple = true;
+      f.options.forEach(optVal => {
+        const opt = document.createElement('option');
+        opt.value = optVal;
+        opt.textContent = optVal;
+        if (optVal === f.value) opt.selected = true;
+        input.appendChild(opt);
+      });
+    } else {
+      input = document.createElement('input');
+      input.type = 'text';
+      input.value = f.value || '';
     }
+    input.name = key;
+    form.appendChild(label);
+    form.appendChild(input);
   }
 
-  // Repeat-Feld (pro Zeile)
-  const repeatFieldKey = Object.keys(t.fields_vorlage).find(k => t.fields_vorlage[k].repeat);
+  // Repeat-Feld
+  const repeatFieldKey = Object.keys(t.fields_csv).find(k => t.fields_csv[k].repeat);
   if (repeatFieldKey) {
-    const f = t.fields_vorlage[repeatFieldKey];
+    const f = t.fields_csv[repeatFieldKey];
     if (f.editable) {
       const label = document.createElement('label');
-      label.textContent = unsanitizeKey(repeatFieldKey) + ' (mehrere durch Komma):';
+      label.textContent = unsanitizeKey(repeatFieldKey) + ' (mehrere durch Komma für CSV-Loop):';
       let input;
       if (f.options && Array.isArray(f.options)) {
         input = document.createElement('select');
@@ -85,7 +85,7 @@ function buildForm(t) {
     }
   }
 
-  // placeholders in title/text, nicht in fields_vorlage
+  // Fields aus Title/Text, die nicht in fields_vorlage sind
   const allPlaceholders = new Set((t.title + t.text).match(/{{\s*([a-zA-Z0-9_äöüÄÖÜß]+)\s*}}/g) || []);
   allPlaceholders.forEach(ph => {
     const key = ph.replace(/[{}]/g, '').trim();
@@ -103,14 +103,15 @@ function buildForm(t) {
   buildRepeatFields(t);
 }
 
-// Repeat-Variablenfelder bauen
+// Repeat-Felder (per Repeat-Wert) inkl. Pairs
 function buildRepeatFields(t) {
   const old = form.querySelectorAll('.dynamic-repeat');
   old.forEach(el => el.remove());
 
-  const repeatFieldKey = Object.keys(t.fields_vorlage).find(k => t.fields_vorlage[k].repeat);
+  const repeatFieldKey = Object.keys(t.fields_csv).find(k => t.fields_csv[k].repeat);
   if (!repeatFieldKey) return;
   const repeatInput = form.querySelector(`[name='${repeatFieldKey}']`);
+
   let repeatValues = [];
   if (repeatInput) {
     if (repeatInput.tagName === "SELECT" && repeatInput.multiple) {
@@ -125,33 +126,37 @@ function buildRepeatFields(t) {
     const div = document.createElement('div');
     div.className = 'dynamic-repeat';
 
+    // editable perServer fields
     for (const key in t.fields_vorlage) {
       const f = t.fields_vorlage[key];
-      if (!f.editable || !f.perRepeat) continue;
-      const label = document.createElement('label');
-      label.textContent = `${unsanitizeKey(key)} für ${val}` + (f.multi ? ' (mehrere durch Komma)' : '') + ':';
-      let input;
-      if (f.options && Array.isArray(f.options)) {
-        input = document.createElement('select');
-        if (f.multi) input.multiple = true;
-        f.options.forEach(optVal => {
-          const opt = document.createElement('option');
-          opt.value = optVal;
-          opt.textContent = optVal;
-          if (optVal === f.value) opt.selected = true;
-          input.appendChild(opt);
-        });
-      } else {
-        input = document.createElement('input');
-        input.type = 'text';
-        input.value = f.value || '';
+      if (f.editable && f.perRepeat) {
+        const label = document.createElement('label');
+        label.textContent = `${unsanitizeKey(key)} für ${val}` + (f.multi ? ' (mehrere durch Komma)' : '') + ':';
+
+        let input;
+        if (f.options && Array.isArray(f.options)) {
+          input = document.createElement('select');
+          if (f.multi) input.multiple = true;
+          f.options.forEach(optVal => {
+            const opt = document.createElement('option');
+            opt.value = optVal;
+            opt.textContent = optVal;
+            if (optVal === f.value) opt.selected = true;
+            input.appendChild(opt);
+          });
+        } else {
+          input = document.createElement('input');
+          input.type = 'text';
+          input.value = f.value || '';
+        }
+
+        input.name = `${key}_${val}`;
+        div.appendChild(label);
+        div.appendChild(input);
       }
-      input.name = `${key}_${val}`;
-      div.appendChild(label);
-      div.appendChild(input);
     }
 
-    // editable pairs
+    // editable pairs perRepeat
     if (t.pairs && t.pairs.length > 0) {
       t.pairs.forEach((pair, i) => {
         if (!pair.editable) return;
@@ -177,6 +182,7 @@ select.addEventListener('change', () => {
   buildForm(templates[select.value]);
   updatePreview();
 });
+
 buildForm(templates[0]);
 
 // Vorschau
@@ -196,7 +202,7 @@ function updatePreview() {
   preview.innerText = fillPlaceholders(t.text, data);
 }
 
-// CSV Download
+// CSV Export
 function downloadCSV() {
   const t = templates[select.value];
   const data = {};
@@ -209,24 +215,17 @@ function downloadCSV() {
     }
   });
 
-  // Feste Werte aus fields_vorlage oder fields_csv übernehmen
-    for (const key in t.fields_vorlage) {
-    if ((data[key] === undefined || data[key] === '') && t.fields_vorlage[key].value !== undefined) {
-        data[key] = t.fields_vorlage[key].value;
+  // Feste Werte übernehmen
+  for (const key in t.fields_csv) {
+    if (!data[key] && t.fields_csv[key].value !== undefined) {
+      data[key] = t.fields_csv[key].value;
     }
-    }
-    for (const key in t.fields_csv) {
-    if ((data[key] === undefined || data[key] === '') && t.fields_csv[key].value !== undefined) {
-        data[key] = t.fields_csv[key].value;
-    }
-    }
-
+  }
 
   const repeatFieldKey = Object.keys(t.fields_csv).find(k => t.fields_csv[k].repeat);
   let repeatValues = [''];
   if (repeatFieldKey) {
-    if (form.querySelector(`[name='${repeatFieldKey}']`)?.tagName === "SELECT" &&
-        form.querySelector(`[name='${repeatFieldKey}']`).multiple) {
+    if (form.querySelector(`[name='${repeatFieldKey}']`)?.tagName === "SELECT" && form.querySelector(`[name='${repeatFieldKey}']`).multiple) {
       repeatValues = Array.from(form.querySelector(`[name='${repeatFieldKey}']`).selectedOptions).map(o => o.value);
     } else {
       repeatValues = (data[repeatFieldKey] || '').split(',').map(s => s.trim()).filter(s => s);
@@ -235,11 +234,12 @@ function downloadCSV() {
 
   // Spaltenreihenfolge
   let csvFields = Object.keys(t.fields_csv);
-  // + pairs
   if (t.pairs && t.pairs.length > 0) {
     t.pairs.forEach(p => {
       Object.keys(p).forEach(k => {
-        if (!["editable", "perRepeat"].includes(k) && !csvFields.includes(k)) csvFields.push(k);
+        if (!["editable", "perRepeat"].includes(k) && !csvFields.includes(k)) {
+          csvFields.push(k);
+        }
       });
     });
   }
@@ -253,26 +253,27 @@ function downloadCSV() {
 
     csvFields.forEach(f => {
       if (f === repeatFieldKey) return;
+
       const input = form.querySelector(`[name='${f}_${val}']`);
-      let fieldValue;
+      let valField;
       if (input) {
-        if (input.tagName === "SELECT" && input.multiple) {
-          fieldValue = Array.from(input.selectedOptions).map(o => o.value).join(',');
-        } else {
-          fieldValue = input.value;
-        }
+        if (input.tagName === "SELECT" && input.multiple) valField = Array.from(input.selectedOptions).map(o => o.value).join(',');
+        else valField = input.value;
       } else {
-        fieldValue = data[f] || '';
+        valField = data[f] || t.fields_csv[f]?.value || '';
       }
 
       // Conditions prüfen
-      if (t.fields_csv[f] && Array.isArray(t.fields_csv[f].conditions)) {
-        t.fields_csv[f].conditions.forEach(cond => {
-          if (data[cond.key] === cond.value) fieldValue = cond.setValue;
-        });
+      const conds = t.fields_csv[f]?.conditions ?? t.fields_vorlage[f]?.conditions;
+      if (conds && conds.length) {
+        for (const c of conds) {
+          if (data[c.key] === c.value) {
+            valField = c.set;
+            break;
+          }
+        }
       }
-
-      row[f] = fieldValue;
+      row[f] = valField;
     });
 
     // Pairs
@@ -291,12 +292,14 @@ function downloadCSV() {
     }
   });
 
-  // Dateiname dynamisch
+  // Dynamischer Dateiname
   let filename = t.filename || 'daten.csv';
   filename = filename.replace(/{{\s*([a-zA-Z0-9_]+)\s*}}/g, (m, key) => {
-    let val = data[key] || '';
-    if (t.fields_vorlage[key] && t.fields_vorlage[key].multi) val = val.split(',').map(s => s.trim()).join('_');
-    return val;
+    let valFile = data[key] || '';
+    if (t.fields_csv[key] && t.fields_csv[key].multi) {
+      valFile = valFile.split(',').map(s => s.trim()).join('_');
+    }
+    return valFile;
   });
 
   const bom = "\uFEFF";
