@@ -18,7 +18,7 @@ const templates = [
       betrag: { value: "100", editable: true },
       proxy: { value: "", editable: true, options: ["proxy1", "proxy2", "proxy3"] }, // Dropdown
       status: { value: "aktiv", editable: true, options: ["aktiv", "inaktiv"], perRepeat: true }, // perRepeat + Dropdown
-      gruppe: { value: "", editable: true, multi: true, perRepeat: true } // Multi-Auswahl
+      gruppe: { value: "", editable: true, multi: false, perRepeat: true } // Multi-Auswahl
     },
 
     pairs: [
