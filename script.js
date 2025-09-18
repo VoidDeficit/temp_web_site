@@ -117,6 +117,7 @@ function buildForm(t) {
 
 
 // Repeat-Felder inkl. Pairs
+// Build Repeat-Felder inkl. Pairs
 function buildRepeatFields(t) {
   const prev = {};
   [...form.elements].forEach(el => {
@@ -143,6 +144,7 @@ function buildRepeatFields(t) {
     for (const key in allFields) {
       const f = allFields[key];
       if (!f || !f.perRepeat) continue;
+      if (f.editable === false) continue; // <-- skip fields perRepeat & editable:false
 
       const label = document.createElement('label');
       label.textContent = `${unsanitizeKey(key)} für ${rv}:`;
