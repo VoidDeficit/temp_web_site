@@ -10,7 +10,7 @@ const templates = [
       kunde:       { value:"", editable:true, multi:false, repeat:false, perRepeat:false, options:null, conditions:[] },
       betrag:      { value:"100", editable:true, multi:false, repeat:false, perRepeat:false, options:null, conditions:[] },
       stage:       { value:"", editable:true, multi:false, repeat:false, perRepeat:false, conditions:[] },
-      stage_name:  { value:"", editable:false, multi:false, repeat:false, perRepeat:false,
+      stage_name:  { value:"", editable:false, multi:false, repeat:false, perRepeat:false, uniqueResult: true,
                      conditions: [
                        { key:"stage", value:"Abbau", set:"am Abbau", mode:"equals", split: true },
                        { key:"stage", value:"bau", set:"enthält Bau", mode:"contains", split: true },

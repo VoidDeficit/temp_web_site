@@ -183,10 +183,6 @@ function updatePreview() {
     } else {
       val = el.value;
     }
-    // Multi-Feld für Title/Text: ',' → '_'
-    if ((t.fields_vorlage[el.name]?.multi || t.fields_csv[el.name]?.multi) && val) {
-      val = val.split(',').map(s => s.trim()).join('_');
-    }
     data[el.name] = val;
   });
 
@@ -200,74 +196,55 @@ function updatePreview() {
     if (f.ref && data[f.ref] !== undefined) data[key] = data[f.ref];
   }
 
-  // Hilfsfunktionen
   function checkCondition(value, cond) {
-    if (!cond.mode || cond.mode === "equals") return value === cond.value;
-    if (cond.mode === "contains") return value.includes(cond.value);
-    if (cond.mode === "regex") return new RegExp(cond.value).test(value);
-    return false;
-  }
-
-  function readInputValue(input) {
-    if (!input) return '';
-    if (input.tagName === "SELECT" && input.multiple) return Array.from(input.selectedOptions).map(o => o.value).join(',');
-    return input.value;
+    const v = value ?? '';
+    switch (cond.mode) {
+      case "equals": return v === cond.value;
+      case "contains": return v.includes(cond.value);
+      case "startsWith": return v.startsWith(cond.value);
+      case "endsWith": return v.endsWith(cond.value);
+      case "regex": try { return new RegExp(cond.value).test(v); } catch(e){return false;}
+      default: return false;
+    }
   }
 
   function applyConditions(fieldKey, fieldDef) {
-    let base = data[fieldKey] ?? fieldDef.value ?? '';
+    let baseVal = data[fieldKey] ?? fieldDef.value ?? '';
+    if (!fieldDef.conditions || !fieldDef.conditions.length) return baseVal;
 
-    if (!fieldDef.conditions || !fieldDef.conditions.length) return base;
+    const uniqueResult = fieldDef.uniqueResult ?? false;
 
-    // Split-Conditions
-    const splitCond = fieldDef.conditions.find(c => c.split);
-    if (splitCond) {
-      const sourceVal = data[splitCond.key] ?? '';
-      const parts = sourceVal.split(',').map(s => s.trim()).filter(Boolean);
-      const results = parts.map(p => {
-        for (const c of fieldDef.conditions) {
-          if (checkCondition(p, c)) return c.set;
+    const parts = (fieldDef.perRepeat || fieldDef.multi || fieldDef.conditions.some(c => c.split)) 
+                  ? (data[fieldDef.conditions[0].key] ?? '').split(',').map(s => s.trim()).filter(Boolean)
+                  : [baseVal];
+
+    const results = [];
+    parts.forEach(p => {
+      for (const c of fieldDef.conditions) {
+        let compareVal = p;
+        if (!c.split) compareVal = data[c.key] ?? '';
+        if (checkCondition(compareVal, c)) {
+          if (!uniqueResult || !results.includes(c.set)) results.push(c.set);
+          return;
         }
-        return '';
-      }).filter(Boolean);
-      return results.join(' ');
-    }
+      }
+      if (!fieldDef.conditions.some(c => checkCondition(p, c))) results.push(p);
+    });
 
-    // perRepeat + perRepeat Input vorhanden
-    if (fieldDef.perRepeat) {
-      const repeatValues = data[Object.keys(t.fields_csv).find(k => t.fields_csv[k].repeat)]?.split(',') || [''];
-      const results = repeatValues.map(rv => {
-        const perInput = form.querySelector(`[name='${fieldKey}_${rv}']`);
-        const compareVal = perInput ? readInputValue(perInput) : data[fieldKey] ?? base;
-        for (const c of fieldDef.conditions) {
-          if (checkCondition(compareVal, c)) return c.set;
-        }
-        return compareVal;
-      });
-      return results.join('_');
-    }
-
-    // normale Conditions
-    for (const c of fieldDef.conditions) {
-      const compareVal = data[c.key] ?? t.fields_vorlage[c.key]?.value ?? t.fields_csv[c.key]?.value ?? '';
-      if (checkCondition(compareVal, c)) return c.set;
-    }
-
-    return base;
+    // Ergebnisse mit Leerzeichen verbinden
+    return results.join(' ');
   }
 
   // Conditions anwenden
   for (const key in t.fields_vorlage) data[key] = applyConditions(key, t.fields_vorlage[key]);
   for (const key in t.fields_csv) data[key] = applyConditions(key, t.fields_csv[key]);
 
-  // Title und Text mit aktualisierten Werten
+  // Title/Text füllen
   titleBox.innerText = fillPlaceholders(t.title, data);
   preview.innerText = fillPlaceholders(t.text, data);
 
-  // UI wiederholen
   buildRepeatFields(t);
 }
-
 
 function downloadCSV() {
   const t = templates[select.value];
