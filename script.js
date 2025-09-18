@@ -243,6 +243,7 @@ select.addEventListener('change', () => {
 buildForm(templates[0]);
 
 // Vorschau aktualisieren
+// Title und Text aktualisieren
 function updatePreview() {
   const t = templates[select.value];
   const data = {};
@@ -250,7 +251,12 @@ function updatePreview() {
   // Alle Formularwerte einsammeln
   [...form.elements].forEach(el => {
     if (!el.name) return;
-    let val = readInputValue(el);
+    let val;
+    if (el.tagName === "SELECT" && el.multiple) {
+      val = Array.from(el.selectedOptions).map(o => o.value).join(',');
+    } else {
+      val = el.value;
+    }
 
     // Multi-Feld für Title/Text: ',' → '_'
     if ((t.fields_vorlage[el.name]?.multi || t.fields_csv[el.name]?.multi) && val) {
@@ -259,40 +265,57 @@ function updatePreview() {
     data[el.name] = val;
   });
 
-  // ref-Felder auflösen
-  function resolveRefs(fields) {
-    for (const key in fields) {
-      const f = fields[key];
-      if (f && f.ref && data[f.ref] !== undefined) {
-        data[key] = data[f.ref];
-      }
+  // Ref-Felder auflösen
+  for (const key in t.fields_vorlage) {
+    const f = t.fields_vorlage[key];
+    if (f.ref && data[f.ref] !== undefined) {
+      data[key] = data[f.ref];
     }
   }
-  resolveRefs(t.fields_vorlage);
-  resolveRefs(t.fields_csv);
+  for (const key in t.fields_csv) {
+    const f = t.fields_csv[key];
+    if (f.ref && data[f.ref] !== undefined) {
+      data[key] = data[f.ref];
+    }
+  }
 
   // Conditions anwenden
   function applyConditions(fieldKey, fieldDef) {
     let val = data[fieldKey] ?? fieldDef.value ?? '';
-    if (fieldDef.conditions) {
-      if (fieldDef.perRepeat && val.includes(',')) {
-        val = val.split(',').map(v => {
-          for (const c of fieldDef.conditions) {
-            if (v === c.value) return c.set;
-          }
-          return v;
-        }).join('_');
-      } else {
-        for (const c of fieldDef.conditions) {
-          if (data[c.key] === c.value) {
-            val = c.set;
+    if (fieldDef.conditions && fieldDef.conditions.length) {
+      for (const c of fieldDef.conditions) {
+        const checkVal = (data[c.key] ?? "").toString();
+        let match = false;
+
+        switch (c.mode || "equals") {
+          case "equals":
+            match = (checkVal === c.value);
             break;
-          }
+          case "contains":
+            match = checkVal.includes(c.value);
+            break;
+          case "startsWith":
+            match = checkVal.startsWith(c.value);
+            break;
+          case "endsWith":
+            match = checkVal.endsWith(c.value);
+            break;
+          case "regex":
+            try {
+              match = new RegExp(c.value).test(checkVal);
+            } catch (e) { match = false; }
+            break;
+        }
+
+        if (match) {
+          val = c.set;
+          break; // erste passende Bedingung gewinnt
         }
       }
     }
     return val;
   }
+
   for (const key in t.fields_vorlage) {
     data[key] = applyConditions(key, t.fields_vorlage[key]);
   }
@@ -300,11 +323,11 @@ function updatePreview() {
     data[key] = applyConditions(key, t.fields_csv[key]);
   }
 
-  // Title und Text
+  // Title und Text mit aktualisierten multi-Werten
   titleBox.innerText = fillPlaceholders(t.title, data);
   preview.innerText = fillPlaceholders(t.text, data);
 
-  buildRepeatFields(t);
+  buildRepeatFields(t); // UI wiederholen
 }
 
 // CSV Export

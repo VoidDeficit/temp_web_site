@@ -7,15 +7,15 @@ const templates = [
     text: "Sehr geehrte/r {{kunde}},\nRechnung für {{uname}} im stage {{stage_name}} über {{betrag}} Euro.\n\nMit freundlichen Grüßen\n{{firma_tews}}",
     
     fields_vorlage: {
-        ticket_nr:  { value:"",              editable:true,  multi:false, repeat:false, perRepeat:false, options:null,              conditions:[] },
-      uname:      { value:"Server1,Server2", editable:true,  multi:true,  repeat:true,  perRepeat:false, options:null,              conditions:[] },
+      ticket_nr:  { value:"",              editable:true,  multi:false, repeat:false, perRepeat:false, options:null,              conditions:[] },
       kunde:      { value:"",              editable:true,  multi:false, repeat:false, perRepeat:false, options:null,              conditions:[] },
       betrag:     { value:"100",           editable:true,  multi:false, repeat:false, perRepeat:false, options:null,              conditions:[] },
       stage:      { value:"",              editable:true,  multi:false, repeat:false, perRepeat:false, options:null,              conditions:[] },
       stage_name: { value:"",              editable:true,  multi:false, repeat:false, perRepeat:false,
-                    conditions:[
-                      { key: "stage", value: "Abbau",    set: "am Abbau" },
-                      { key: "stage", value: "Transport", set: "beim Transport" }
+                    conditions: [
+                    { key: "stage", value: "Abbau", set: "am Abbau", mode: "equals" },
+                    { key: "stage", value: "bau", set: "enthält Bau", mode: "contains" },
+                    { key: "stage", value: "^Tr", set: "Regex Match", mode: "regex" }
                     ]
                   },
       firma_tews: { value:"Tews GmbH",     editable:false, multi:false, repeat:false, perRepeat:false, options:null,              conditions:[] },
@@ -25,7 +25,7 @@ const templates = [
     },
 
     fields_csv: {
-      uname:     { repeat:true,  multi:true,  conditions:[] },
+      uname:     {  editable:true, repeat:true,  multi:true,  conditions:[] },
       kunde:     { repeat:false, multi:false, conditions:[] },
       betrag:    { repeat:false, multi:false, conditions:[] },
       proxy:     { repeat:false, multi:false, conditions:[] },
