@@ -3,7 +3,7 @@ const form = document.getElementById('inputForm');
 const preview = document.getElementById('preview');
 const titleBox = document.getElementById('titleBox');
 
-// Dropdown
+// Dropdown Template Auswahl
 templates.forEach((t, i) => {
   const opt = document.createElement('option');
   opt.value = i;
@@ -21,7 +21,7 @@ function fillPlaceholders(str, data) {
   });
 }
 
-// Build form
+// Build Form
 function buildForm(t) {
   form.innerHTML = '';
 
@@ -31,9 +31,25 @@ function buildForm(t) {
     if (f.editable && !f.perServer && !f.repeat) {
       const label = document.createElement('label');
       label.textContent = unsanitizeKey(key) + (f.multi ? ' (mehrere durch Komma)' : '') + ':';
-      const input = document.createElement('input');
+
+      let input;
+      if (f.options && Array.isArray(f.options)) {
+        input = document.createElement('select');
+        if (f.multi) input.multiple = true;
+        f.options.forEach(optVal => {
+          const opt = document.createElement('option');
+          opt.value = optVal;
+          opt.textContent = optVal;
+          if (optVal === f.value) opt.selected = true;
+          input.appendChild(opt);
+        });
+      } else {
+        input = document.createElement('input');
+        input.type = 'text';
+        input.value = f.value || '';
+      }
+
       input.name = key;
-      input.value = f.value || '';
       form.appendChild(label);
       form.appendChild(input);
     }
@@ -43,19 +59,36 @@ function buildForm(t) {
   const repeatFieldKey = Object.keys(t.fields).find(k => t.fields[k].repeat);
   if (repeatFieldKey) {
     const f = t.fields[repeatFieldKey];
-    if (f.editable) { // Nur anzeigen, wenn editable
+    if (f.editable) {
       const label = document.createElement('label');
       label.textContent = unsanitizeKey(repeatFieldKey) + (f.multi ? ' (mehrere durch Komma)' : '') + ':';
-      const input = document.createElement('input');
+
+      let input;
+      if (f.options && Array.isArray(f.options)) {
+        input = document.createElement('select');
+        if (f.multi) input.multiple = true;
+        f.options.forEach(optVal => {
+          const opt = document.createElement('option');
+          opt.value = optVal;
+          opt.textContent = optVal;
+          if (optVal === f.value) opt.selected = true;
+          input.appendChild(opt);
+        });
+      } else {
+        input = document.createElement('input');
+        input.type = 'text';
+        input.value = f.value || '';
+      }
+
       input.name = repeatFieldKey;
-      input.value = f.value || '';
       form.appendChild(label);
       form.appendChild(input);
       input.addEventListener('input', () => buildRepeatFields(t));
+      input.addEventListener('change', () => buildRepeatFields(t));
     }
   }
 
-  // placeholders in title/text not in fields
+  // placeholders in title/text not in fields → bleiben normale Textfelder
   const allPlaceholders = new Set((t.title + t.text).match(/{{\s*([a-zA-Z0-9_äöüÄÖÜß]+)\s*}}/g) || []);
   allPlaceholders.forEach(ph => {
     const key = ph.replace(/[{}]/g, '').trim();
@@ -73,15 +106,23 @@ function buildForm(t) {
   buildRepeatFields(t);
 }
 
-// Repeat per value
+// Build repeat (perServer) fields
 function buildRepeatFields(t) {
   const old = form.querySelectorAll('.dynamic-repeat');
   old.forEach(el => el.remove());
 
   const repeatFieldKey = Object.keys(t.fields).find(k => t.fields[k].repeat);
   if (!repeatFieldKey) return;
-  const repeatInput = form.querySelector(`input[name='${repeatFieldKey}']`);
-  const repeatValues = (repeatInput?.value || '').split(',').map(s => s.trim()).filter(s => s);
+  const repeatInput = form.querySelector(`[name='${repeatFieldKey}']`);
+
+  let repeatValues = [];
+  if (repeatInput) {
+    if (repeatInput.tagName === "SELECT" && repeatInput.multiple) {
+      repeatValues = Array.from(repeatInput.selectedOptions).map(o => o.value);
+    } else {
+      repeatValues = (repeatInput.value || '').split(',').map(s => s.trim()).filter(s => s);
+    }
+  }
   if (!repeatValues.length) return;
 
   repeatValues.forEach(val => {
@@ -94,9 +135,25 @@ function buildRepeatFields(t) {
       if (f.editable && f.perServer) {
         const label = document.createElement('label');
         label.textContent = `${unsanitizeKey(key)} für ${val}` + (f.multi ? ' (mehrere durch Komma)' : '') + ':';
-        const input = document.createElement('input');
+
+        let input;
+        if (f.options && Array.isArray(f.options)) {
+          input = document.createElement('select');
+          if (f.multi) input.multiple = true;
+          f.options.forEach(optVal => {
+            const opt = document.createElement('option');
+            opt.value = optVal;
+            opt.textContent = optVal;
+            if (optVal === f.value) opt.selected = true;
+            input.appendChild(opt);
+          });
+        } else {
+          input = document.createElement('input');
+          input.type = 'text';
+          input.value = f.value || '';
+        }
+
         input.name = `${key}_${val}`;
-        input.value = f.value || '';
         div.appendChild(label);
         div.appendChild(input);
       }
@@ -136,7 +193,14 @@ buildForm(templates[0]);
 function updatePreview() {
   const t = templates[select.value];
   const data = {};
-  [...form.elements].forEach(el => { if (el.name) data[el.name] = el.value; });
+  [...form.elements].forEach(el => {
+    if (!el.name) return;
+    if (el.tagName === "SELECT" && el.multiple) {
+      data[el.name] = Array.from(el.selectedOptions).map(o => o.value).join(',');
+    } else {
+      data[el.name] = el.value;
+    }
+  });
   for (const key in t.fields) { if (!t.fields[key].editable) data[key] = t.fields[key].value; }
   titleBox.innerText = fillPlaceholders(t.title, data);
   preview.innerText = fillPlaceholders(t.text, data);
@@ -147,7 +211,12 @@ function downloadCSV() {
   const t = templates[select.value];
   const data = {};
   [...form.elements].forEach(el => {
-    if (el.name) data[el.name] = el.value;
+    if (!el.name) return;
+    if (el.tagName === "SELECT" && el.multiple) {
+      data[el.name] = Array.from(el.selectedOptions).map(o => o.value).join(',');
+    } else {
+      data[el.name] = el.value;
+    }
   });
 
   // Feste Werte auch übernehmen (editable:false)
@@ -159,7 +228,14 @@ function downloadCSV() {
 
   // Repeat-Feld ermitteln
   const repeatFieldKey = Object.keys(t.fields).find(k => t.fields[k].repeat);
-  const repeatValues = repeatFieldKey ? (data[repeatFieldKey] || '').split(',').map(s => s.trim()).filter(s => s) : [''];
+  let repeatValues = [''];
+  if (repeatFieldKey) {
+    if (form.querySelector(`[name='${repeatFieldKey}']`)?.tagName === "SELECT" && form.querySelector(`[name='${repeatFieldKey}']`).multiple) {
+      repeatValues = Array.from(form.querySelector(`[name='${repeatFieldKey}']`).selectedOptions).map(o => o.value);
+    } else {
+      repeatValues = (data[repeatFieldKey] || '').split(',').map(s => s.trim()).filter(s => s);
+    }
+  }
 
   // Spaltenreihenfolge: so wie in fields definiert
   let csvFields = Object.keys(t.fields);
@@ -182,24 +258,26 @@ function downloadCSV() {
     if (repeatFieldKey) row[repeatFieldKey] = val;
 
     csvFields.forEach(f => {
-      if (f === repeatFieldKey) return; // schon gesetzt
-      // Per-Server Eingabe prüfen
+      if (f === repeatFieldKey) return;
       const input = form.querySelector(`[name='${f}_${val}']`);
-      if (input) row[f] = input.value;
-      else {
-        // Sonst globales Feld oder vordefinierter Wert
+      if (input) {
+        if (input.tagName === "SELECT" && input.multiple) {
+          row[f] = Array.from(input.selectedOptions).map(o => o.value).join(',');
+        } else {
+          row[f] = input.value;
+        }
+      } else {
         row[f] = data[f] || '';
       }
     });
 
-    // editable:false pairs auch berücksichtigen
     if (t.pairs && t.pairs.length > 0) {
       t.pairs.forEach((pair, i) => {
         let pairRow = { ...row };
         for (const key in pair) {
           if (["editable", "perServer", "repeat"].includes(key)) continue;
           const el = form.querySelector(`input[name='pair_${i}_${key}_${val}']`);
-          pairRow[key] = el ? el.value : pair[key]; // vordefinierter Wert fallback
+          pairRow[key] = el ? el.value : pair[key];
         }
         csvLines.push(csvFields.map(f => pairRow[f] || '').join(';'));
       });
