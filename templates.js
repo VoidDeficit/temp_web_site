@@ -26,6 +26,7 @@ const templates = [
       uname:   { editable:true, repeat:true, multi:true, conditions:[] },
       kunde:   { repeat:false, multi:false, conditions:[] },
       betrag:  { repeat:false, multi:false, conditions:[] },
+      user:    {},
       proxy:   { repeat:false, multi:false,
                  conditions:[
                    { key:"stage", value:"Abbau", set:"proxy1", mode:"equals" },
@@ -34,12 +35,14 @@ const templates = [
                  ]
                },
       test:    { ref:"test_repeat", repeat:false, multi:false, perRepeat:true, conditions:[] },
-      firma:   { repeat:false, multi:false, conditions:[] }
+      firma:   { repeat:false, multi:false, conditions:[] },
+      group:   {}
     },
-
+    pairBy: "proxy",
     pairs: [
       { user:"example_user1", group:"example_group1", editable:false, perRepeat:true },
-      { user:"example_user2", group:"example_group2", editable:true, perRepeat:true }
+      { user:"example_user2", group:"example_group2", editable:true, perRepeat:true },
+      { user:"example_user1", group:"example_group2", editable:false, perRepeat:true }
     ]
   }
 ];

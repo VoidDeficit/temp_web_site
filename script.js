@@ -177,28 +177,43 @@ function updatePreview() {
   // Alle Formularwerte einsammeln
   [...form.elements].forEach(el => {
     if (!el.name) return;
-    let val;
-    if (el.tagName === "SELECT" && el.multiple) {
-      val = Array.from(el.selectedOptions).map(o => o.value).join(',');
-    } else {
-      val = el.value;
-    }
-    data[el.name] = val;
+    data[el.name] = el.tagName === "SELECT" && el.multiple
+      ? Array.from(el.selectedOptions).map(o => o.value).join(',')
+      : el.value;
   });
 
   // Ref-Felder auflösen
-  for (const key in t.fields_vorlage) {
-    const f = t.fields_vorlage[key];
-    if (f.ref && data[f.ref] !== undefined) data[key] = data[f.ref];
+  function resolveRefs(fields) {
+    for (const k in fields) {
+      const f = fields[k];
+      if (f && f.ref && data[f.ref] !== undefined) data[k] = data[f.ref];
+    }
   }
-  for (const key in t.fields_csv) {
-    const f = t.fields_csv[key];
-    if (f.ref && data[f.ref] !== undefined) data[key] = data[f.ref];
-  }
+  resolveRefs(t.fields_vorlage);
+  resolveRefs(t.fields_csv);
 
+  const repeatFieldKey = Object.keys(t.fields_csv).find(k => t.fields_csv[k].repeat);
+  const repeatValues = repeatFieldKey
+    ? (data[repeatFieldKey] || '').split(',').map(s => s.trim()).filter(Boolean)
+    : [''];
+
+  // Paare auflösen pro Repeat
+  const pairData = repeatValues.map(rv => {
+    const pd = {};
+    if (t.pairs && t.pairs.length) {
+      t.pairs.forEach((pair, i) => {
+        Object.keys(pair).forEach(k => {
+          if (!["editable","perRepeat"].includes(k)) pd[`pair${i}_${k}`] = pair[k];
+        });
+      });
+    }
+    return pd;
+  });
+
+  // Conditions anwenden
   function checkCondition(value, cond) {
-    const v = value ?? '';
-    switch (cond.mode) {
+    const v = (value ?? "").toString();
+    switch (cond.mode || "equals") {
       case "equals": return v === cond.value;
       case "contains": return v.includes(cond.value);
       case "startsWith": return v.startsWith(cond.value);
@@ -209,54 +224,55 @@ function updatePreview() {
   }
 
   function applyConditions(fieldKey, fieldDef) {
-    let baseVal = data[fieldKey] ?? fieldDef.value ?? '';
-    if (!fieldDef.conditions || !fieldDef.conditions.length) return baseVal;
+    let base = data[fieldKey] ?? fieldDef.value ?? '';
+    if (!fieldDef.conditions?.length) return base;
 
-    const uniqueResult = fieldDef.uniqueResult ?? false;
+    if (fieldDef.split) {
+      const sourceVal = data[fieldDef.key] ?? '';
+      const parts = sourceVal.split(',').map(s => s.trim()).filter(Boolean);
+      return parts.map(p => {
+        for (const c of fieldDef.conditions) if (checkCondition(p, c)) return c.set;
+        return '';
+      }).filter(Boolean).join(' ');
+    }
 
-    const parts = (fieldDef.perRepeat || fieldDef.multi || fieldDef.conditions.some(c => c.split)) 
-                  ? (data[fieldDef.conditions[0].key] ?? '').split(',').map(s => s.trim()).filter(Boolean)
-                  : [baseVal];
-
-    const results = [];
-    parts.forEach(p => {
-      for (const c of fieldDef.conditions) {
-        let compareVal = p;
-        if (!c.split) compareVal = data[c.key] ?? '';
-        if (checkCondition(compareVal, c)) {
-          if (!uniqueResult || !results.includes(c.set)) results.push(c.set);
-          return;
-        }
-      }
-      if (!fieldDef.conditions.some(c => checkCondition(p, c))) results.push(p);
-    });
-
-    // Ergebnisse mit Leerzeichen verbinden
-    return results.join(' ');
+    for (const c of fieldDef.conditions) {
+      const compareVal = data[c.key] ?? '';
+      if (checkCondition(compareVal, c)) return c.set;
+    }
+    return base;
   }
 
-  // Conditions anwenden
+  // Vorlagenfelder aktualisieren
   for (const key in t.fields_vorlage) data[key] = applyConditions(key, t.fields_vorlage[key]);
   for (const key in t.fields_csv) data[key] = applyConditions(key, t.fields_csv[key]);
 
-  // Title/Text füllen
+  // Paare in Vorschau einfügen
+  repeatValues.forEach((rv, ri) => {
+    const pd = pairData[ri];
+    for (const k in pd) data[k] = pd[k];
+  });
+
+  // Title & Text ersetzen
   titleBox.innerText = fillPlaceholders(t.title, data);
   preview.innerText = fillPlaceholders(t.text, data);
-
-  buildRepeatFields(t);
 }
 
 function downloadCSV() {
   const t = templates[select.value];
   const data = {};
 
-  // Alle Formularwerte sammeln
+  // Formularwerte sammeln
   [...form.elements].forEach(el => {
     if (!el.name) return;
-    data[el.name] = readInputValue(el);
+    if (el.tagName === "SELECT" && el.multiple) {
+      data[el.name] = Array.from(el.selectedOptions).map(o => o.value).join(',');
+    } else {
+      data[el.name] = el.value;
+    }
   });
 
-  // Ref-Felder auflösen
+  // Refs auflösen
   function resolveRefs(fields) {
     for (const k in fields) {
       const f = fields[k];
@@ -270,76 +286,95 @@ function downloadCSV() {
 
   const repeatFieldKey = Object.keys(t.fields_csv).find(k => t.fields_csv[k].repeat);
   let repeatValues = [''];
-  if (repeatFieldKey) {
-    const repeatInput = form.querySelector(`[name='${repeatFieldKey}']`);
-    if (repeatInput) {
-      if (repeatInput.tagName === "SELECT" && repeatInput.multiple) {
-        repeatValues = Array.from(repeatInput.selectedOptions).map(o => o.value);
-      } else {
-        repeatValues = (data[repeatFieldKey] || '').split(',').map(s => s.trim()).filter(Boolean);
-      }
-    }
+  if (repeatFieldKey && data[repeatFieldKey]) {
+    repeatValues = data[repeatFieldKey].split(',').map(s => s.trim()).filter(Boolean);
   }
 
-  // Hilfsfunktionen
   function checkCondition(value, cond) {
-    const val = value ?? '';
-    switch (cond.mode || "equals") {
+    const val = (value ?? "").toString();
+    switch (cond.mode) {
       case "equals": return val === cond.value;
       case "contains": return val.includes(cond.value);
-      case "startsWith": return val.startsWith(cond.value);
-      case "endsWith": return val.endsWith(cond.value);
-      case "regex": try { return new RegExp(cond.value).test(val); } catch(e){ return false; }
+      case "regex":
+        try { return new RegExp(cond.value, 'i').test(val); } catch(e) { return false; }
       default: return false;
     }
   }
 
-  function applyConditions(fieldKey, fieldDef) {
-    let baseVal = data[fieldKey] ?? fieldDef.value ?? '';
-    if (!fieldDef.conditions || !fieldDef.conditions.length) return baseVal;
-
-    // Wenn split aktiviert, mehrfach prüfen
-    const splitCond = fieldDef.conditions.some(c => c.split);
-    const sourceVal = splitCond ? (data[fieldDef.conditions[0].key] ?? '').split(',').map(s => s.trim()).filter(Boolean) : [baseVal];
+  // Hilfsfunktion: Conditions anwenden (split + uniqueResult + perRepeat)
+  function applyConditions(fieldKey, fieldDef, repeatVal = null) {
+    let base = data[fieldKey] ?? fieldDef.value ?? '';
+    if (!fieldDef.conditions?.length) return base;
 
     const results = [];
-    sourceVal.forEach(v => {
-      fieldDef.conditions.forEach(c => {
-        if (checkCondition(v, c) && !results.includes(c.set)) results.push(c.set);
+
+    fieldDef.conditions.forEach(c => {
+      let source = data[c.key] ?? '';
+      if (repeatVal) source = repeatVal;
+
+      let parts = [source];
+      if (c.split) parts = source.split(',').map(s => s.trim()).filter(Boolean);
+
+      parts.forEach(p => {
+        if (checkCondition(p, c)) results.push(c.set);
       });
     });
 
-    // Leerzeichen zwischen mehreren Ergebnissen
-    return results.length ? results.join(' ') : baseVal;
+    if (fieldDef.uniqueResult) return [...new Set(results)].join(' ');
+    return results.join(' ');
   }
 
-  // CSV Felder vorbereiten
-  const csvFields = Object.keys(t.fields_csv);
+  // CSV-Felder inklusive Pairs
+  let csvFields = Object.keys(t.fields_csv);
+  if (t.pairs?.length) {
+    t.pairs.forEach(p => {
+      Object.keys(p).forEach(k => {
+        if (!["editable","perRepeat","conditions"].includes(k) && !csvFields.includes(k)) csvFields.push(k);
+      });
+    });
+  }
+
   const header = csvFields.map(f => unsanitizeKey(f));
   const csvLines = [header.join(';')];
 
   repeatValues.forEach(rv => {
-    let baseRow = {};
+    // Basis-Zeile vorbereiten
+    const baseRow = {};
     if (repeatFieldKey) baseRow[repeatFieldKey] = rv;
 
     csvFields.forEach(f => {
       if (f === repeatFieldKey) return;
 
-      const perInput = form.querySelector(`[name='${f}_${rv}']`);
-      if (perInput) { baseRow[f] = readInputValue(perInput); return; }
-
-      const csvDef = t.fields_csv[f] || t.fields_vorlage[f] || {};
-      baseRow[f] = applyConditions(f, csvDef);
+      const fieldDef = t.fields_csv[f] ?? t.fields_vorlage[f] ?? {};
+      if (fieldDef.perRepeat) {
+        baseRow[f] = applyConditions(f, fieldDef, rv) || '';
+      } else {
+        baseRow[f] = applyConditions(f, fieldDef) || (data[f] ?? (fieldDef.value ?? ''));
+      }
     });
 
-    csvLines.push(csvFields.map(f => baseRow[f] || '').join(';'));
+    // Pairs durchlaufen für diesen Repeat
+    if (t.pairs?.length) {
+      t.pairs.forEach(pair => {
+        const row = { ...baseRow };
+        Object.keys(pair).forEach(k => {
+          if (["editable","perRepeat","conditions"].includes(k)) return;
+          row[k] = pair[k];
+        });
+        csvLines.push(csvFields.map(f => row[f] || '').join(';'));
+      });
+    } else {
+      csvLines.push(csvFields.map(f => baseRow[f] || '').join(';'));
+    }
   });
 
-  // Dateiname mit Conditions
+  // CSV-Filename mit Platzhaltern
   let filename = t.filename || 'daten.csv';
   filename = filename.replace(/{{\s*([a-zA-Z0-9_]+)\s*}}/g, (m, key) => {
-    const fieldDef = t.fields_csv[key] || t.fields_vorlage[key] || {};
-    return applyConditions(key, fieldDef);
+    const fieldDef = t.fields_csv[key] ?? t.fields_vorlage[key];
+    let val = applyConditions(key, fieldDef) || (data[key] ?? '');
+    if (fieldDef?.multi) val = val.split(',').map(s => s.trim()).join('_');
+    return val;
   });
 
   const bom = "\uFEFF";
