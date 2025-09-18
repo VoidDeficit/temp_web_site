@@ -193,191 +193,193 @@ buildForm(templates[0]);
 
 // Vorschau aktualisieren
 function updatePreview() {
-    const t = templates[select.value];
-    const data = {};
-    [...form.elements].forEach(el => {
-        if (!el.name) return;
-        if (el.tagName === "SELECT" && el.multiple) {
-            data[el.name] = Array.from(el.selectedOptions).map(o => o.value).join(',');
-        } else {
-            data[el.name] = el.value;
-        }
-    });
+  const t = templates[select.value];
+  const data = {};
 
-    // Conditions für Vorlagenfelder ohne Repeat
-    for (const key in t.fields_vorlage) {
-        const f = t.fields_vorlage[key];
-        if (!f.perRepeat && f.conditions) {
-            for (const cond of f.conditions) {
-                if (data[cond.key] === cond.value) {
-                    data[key] = cond.set;
-                    break;
-                }
-            }
-        } else if (!f.perRepeat && data[key] === undefined) {
-            data[key] = f.value || '';
-        }
+  // Alle Formularwerte einsammeln
+  [...form.elements].forEach(el => {
+    if (!el.name) return;
+    if (el.tagName === "SELECT" && el.multiple) {
+      data[el.name] = Array.from(el.selectedOptions).map(o => o.value).join(',');
+    } else {
+      data[el.name] = el.value;
     }
+  });
 
-    // Conditions für perRepeat Felder
-    const repeatFieldKey = Object.keys(t.fields_csv).find(k => t.fields_csv[k].repeat);
-    let repeatValues = [];
-    if (repeatFieldKey && data[repeatFieldKey]) {
-        repeatValues = data[repeatFieldKey].split(',').map(s => s.trim()).filter(s => s);
+  // Ref-Felder auflösen
+  for (const key in t.fields_vorlage) {
+    const f = t.fields_vorlage[key];
+    if (f.ref && data[f.ref] !== undefined) {
+      data[key] = data[f.ref];
     }
+  }
+  for (const key in t.fields_csv) {
+    const f = t.fields_csv[key];
+    if (f.ref && data[f.ref] !== undefined) {
+      data[key] = data[f.ref];
+    }
+  }
 
-    repeatValues.forEach(val => {
-        for (const key in {...t.fields_vorlage, ...t.fields_csv}) {
-            const f = {...t.fields_vorlage, ...t.fields_csv}[key];
-            if (!f.perRepeat || !f.conditions) continue;
-
-            const inputName = `${key}_${val}`;
-            let input = form.querySelector(`[name='${inputName}']`);
-            if (!input) continue;
-
-            f.conditions.forEach(cond => {
-                // pro Repeat-Wert prüfen, falls der Repeat-Wert dem Condition-Key entspricht
-                if (cond.key === val) {
-                    input.value = cond.set;
-                }
-            });
+  // Conditions anwenden
+  function applyConditions(fieldKey, fieldDef) {
+    let val = data[fieldKey] ?? fieldDef.value ?? '';
+    if (fieldDef.conditions) {
+      if (fieldDef.perRepeat && val.includes(',')) {
+        // Splitten und auf jede Wiederholung anwenden
+        val = val.split(',').map((v, i) => {
+          for (const c of fieldDef.conditions) {
+            if (v === c.value) return c.set;
+          }
+          return v;
+        }).join(',');
+      } else {
+        for (const c of fieldDef.conditions) {
+          if (data[c.key] === c.value) val = c.set;
         }
-    });
+      }
+    }
+    return val;
+  }
 
-    titleBox.innerText = fillPlaceholders(t.title, data);
-    preview.innerText = fillPlaceholders(t.text, data);
+  // Apply conditions für fields_vorlage
+  for (const key in t.fields_vorlage) {
+    data[key] = applyConditions(key, t.fields_vorlage[key]);
+  }
+  // Apply conditions für fields_csv
+  for (const key in t.fields_csv) {
+    data[key] = applyConditions(key, t.fields_csv[key]);
+  }
+
+  // Title und Text aktualisieren
+  titleBox.innerText = fillPlaceholders(t.title, data);
+  preview.innerText = fillPlaceholders(t.text, data);
+
+  // Repeat-Felder im UI updaten (perRepeat)
+  buildRepeatFields(t);
 }
+
 
 
 // CSV Export
 function downloadCSV() {
-    const t = templates[select.value];
-    const data = {};
-    [...form.elements].forEach(el => {
+  const t = templates[select.value];
+  const data = {};
+  
+  // Werte aus Formular sammeln
+  [...form.elements].forEach(el => {
     if (!el.name) return;
     if (el.tagName === "SELECT" && el.multiple) {
-        data[el.name] = Array.from(el.selectedOptions).map(o => o.value).join(',');
+      data[el.name] = Array.from(el.selectedOptions).map(o => o.value).join(',');
     } else {
-        data[el.name] = el.value;
+      data[el.name] = el.value;
     }
-    });
+  });
 
-    // Hier einfügen: ref-Werte übernehmen
-    for (const key in t.fields_vorlage) {
+  // ref-Felder übernehmen
+  for (const key in t.fields_vorlage) {
     const f = t.fields_vorlage[key];
     if (f.ref && data[f.ref] !== undefined) {
-        data[key] = data[f.ref];
+      data[key] = data[f.ref];
     }
+  }
+  for (const key in t.fields_csv) {
+    const f = t.fields_csv[key];
+    if (f.ref && data[f.ref] !== undefined) {
+      data[key] = data[f.ref];
     }
+  }
 
-    // Danach kommen deine bisherigen Conditions-Checks
-    for (const key in t.fields_vorlage) {
-    const f = t.fields_vorlage[key];
-    if (f.conditions && f.conditions.length) {
-        for (const c of f.conditions) {
-        if (data[c.key] === c.value) {
-            data[key] = c.set;
+  // Repeat-Feld ermitteln
+  const repeatFieldKey = Object.keys(t.fields_csv).find(k => t.fields_csv[k].repeat);
+  let repeatValues = [''];
+  if (repeatFieldKey) {
+    const repeatInput = form.querySelector(`[name='${repeatFieldKey}']`);
+    if (repeatInput) {
+      if (repeatInput.tagName === "SELECT" && repeatInput.multiple) {
+        repeatValues = Array.from(repeatInput.selectedOptions).map(o => o.value);
+      } else {
+        repeatValues = (data[repeatFieldKey] || '').split(',').map(s => s.trim()).filter(s => s);
+      }
+    }
+  }
+
+  // Spalten für CSV bestimmen
+  let csvFields = Object.keys(t.fields_csv);
+  if (t.pairs && t.pairs.length > 0) {
+    t.pairs.forEach(p => {
+      Object.keys(p).forEach(k => {
+        if (!["editable","perRepeat"].includes(k) && !csvFields.includes(k)) {
+          csvFields.push(k);
+        }
+      });
+    });
+  }
+
+  const header = csvFields.map(f => unsanitizeKey(f));
+  const csvLines = [header.join(';')];
+
+  repeatValues.forEach(val => {
+    let row = {};
+    if (repeatFieldKey) row[repeatFieldKey] = val;
+
+    csvFields.forEach(f => {
+      if (f === repeatFieldKey) return;
+
+      const input = form.querySelector(`[name='${f}_${val}']`);
+      let valField;
+      if (input) {
+        if (input.tagName === "SELECT" && input.multiple) valField = Array.from(input.selectedOptions).map(o => o.value).join(',');
+        else valField = input.value;
+      } else {
+        valField = data[f] || t.fields_csv[f]?.value || t.fields_vorlage[f]?.value || '';
+      }
+
+      // Conditions prüfen (vorlage + csv)
+      const conds = t.fields_csv[f]?.conditions ?? t.fields_vorlage[f]?.conditions;
+      if (conds && conds.length) {
+        for (const c of conds) {
+          if (data[c.key] === c.value) {
+            valField = c.set;
             break;
+          }
         }
-        }
-    } else {
-        if (data[key] === undefined) data[key] = f.value || '';
-    }
-    }
+      }
 
-    // feste Werte übernehmen
-    for (const key in t.fields_csv) {
-        if (!data[key] && t.fields_csv[key].value !== undefined) {
-            data[key] = t.fields_csv[key].value;
-        }
-    }
+      row[f] = valField;
+    });
 
-    const repeatFieldKey = Object.keys(t.fields_csv).find(k => t.fields_csv[k].repeat);
-    let repeatValues = [''];
-    if (repeatFieldKey) {
-        if (form.querySelector(`[name='${repeatFieldKey}']`)?.tagName === "SELECT" && form.querySelector(`[name='${repeatFieldKey}']`).multiple) {
-            repeatValues = Array.from(form.querySelector(`[name='${repeatFieldKey}']`).selectedOptions).map(o => o.value);
-        } else {
-            repeatValues = (data[repeatFieldKey] || '').split(',').map(s => s.trim()).filter(s => s);
-        }
-    }
-
-    // Spaltenreihenfolge
-    let csvFields = Object.keys(t.fields_csv);
+    // Pairs
     if (t.pairs && t.pairs.length > 0) {
-        t.pairs.forEach(p => {
-            Object.keys(p).forEach(k => {
-                if (!["editable", "perRepeat"].includes(k) && !csvFields.includes(k)) {
-                    csvFields.push(k);
-                }
-            });
-        });
+      t.pairs.forEach((pair,i) => {
+        let pairRow = {...row};
+        for (const key in pair) {
+          if (["editable","perRepeat"].includes(key)) continue;
+          const el = form.querySelector(`input[name='pair_${i}_${key}_${val}']`);
+          pairRow[key] = el ? el.value : pair[key];
+        }
+        csvLines.push(csvFields.map(f => pairRow[f] || '').join(';'));
+      });
+    } else {
+      csvLines.push(csvFields.map(f => row[f] || '').join(';'));
     }
+  });
 
-    const header = csvFields.map(f => unsanitizeKey(f));
-    const csvLines = [header.join(';')];
+  // Dateiname dynamisch
+  let filename = t.filename || 'daten.csv';
+  filename = filename.replace(/{{\s*([a-zA-Z0-9_]+)\s*}}/g, (m,key) => {
+    let valFile = data[key] || '';
+    if ((t.fields_csv[key] && t.fields_csv[key].multi) || (t.fields_vorlage[key] && t.fields_vorlage[key].multi)) {
+      valFile = valFile.split(',').map(s=>s.trim()).join('_');
+    }
+    return valFile;
+  });
 
-    repeatValues.forEach(val => {
-        let row = {};
-        if (repeatFieldKey) row[repeatFieldKey] = val;
-
-        csvFields.forEach(f => {
-            if (f === repeatFieldKey) return;
-
-            const input = form.querySelector(`[name='${f}_${val}']`);
-            let valField;
-            if (input) {
-                if (input.tagName === "SELECT" && input.multiple) valField = Array.from(input.selectedOptions).map(o => o.value).join(',');
-                else valField = input.value;
-            } else {
-                valField = data[f] || t.fields_csv[f]?.value || '';
-            }
-
-            // Conditions prüfen (perRepeat)
-            const conds = t.fields_csv[f]?.conditions ?? t.fields_vorlage[f]?.conditions;
-            if (conds && conds.length) {
-                conds.forEach(c => {
-                    if (c.key === val) { // Condition pro Repeat-Wert
-                        valField = c.set;
-                    }
-                });
-            }
-            row[f] = valField;
-        });
-
-        // Pairs
-        if (t.pairs && t.pairs.length > 0) {
-            t.pairs.forEach((pair, i) => {
-                let pairRow = { ...row };
-                for (const key in pair) {
-                    if (["editable", "perRepeat"].includes(key)) continue;
-                    const el = form.querySelector(`input[name='pair_${i}_${key}_${val}']`);
-                    pairRow[key] = el ? el.value : pair[key];
-                }
-                csvLines.push(csvFields.map(f => pairRow[f] || '').join(';'));
-            });
-        } else {
-            csvLines.push(csvFields.map(f => row[f] || '').join(';'));
-        }
-    });
-
-
-    // Dynamischer Dateiname
-    let filename = t.filename || 'daten.csv';
-    filename = filename.replace(/{{\s*([a-zA-Z0-9_]+)\s*}}/g, (m, key) => {
-        let valFile = data[key] || '';
-        if (t.fields_csv[key] && t.fields_csv[key].multi) {
-            valFile = valFile.split(',').map(s => s.trim()).join('_');
-        }
-        return valFile;
-    });
-
-    const bom = "\uFEFF";
-    const blob = new Blob([bom + csvLines.join('\n')], { type: 'text/csv;charset=utf-8;' });
-    const link = document.createElement('a');
-    link.href = URL.createObjectURL(blob);
-    link.download = filename;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+  const bom = "\uFEFF";
+  const blob = new Blob([bom + csvLines.join('\n')], {type:'text/csv;charset=utf-8;'});
+  const link = document.createElement('a');
+  link.href = URL.createObjectURL(blob);
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
 }

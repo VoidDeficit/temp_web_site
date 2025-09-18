@@ -3,7 +3,7 @@ const templates = [
   {
     name: "Rechnung",
     filename: "Rechnung_{{proxy}}_{{kunde}}.csv",
-    title: "Rechnung für {{kunde}} - Ticket {{ticket_nr}}",
+    title: "location {{location}}  Rechnung für {{kunde}} - Ticket {{ticket_nr}}",
     text: "Sehr geehrte/r {{kunde}},\nRechnung für {{uname}} im stage {{stage_name}} über {{betrag}} Euro.\n\nMit freundlichen Grüßen\n{{firma_tews}}",
     
     fields_vorlage: {
