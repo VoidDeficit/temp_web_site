@@ -215,15 +215,24 @@ function downloadCSV(){
     if(el.name) data[el.name] = el.value;
   });
 
+  // Feste Werte auch übernehmen (editable:false)
+  for(const key in t.fields){
+    if(!data[key] && t.fields[key].value !== undefined){
+      data[key] = t.fields[key].value;
+    }
+  }
+
   const repeatFieldKey = Object.keys(t.fields).find(k=>t.fields[k].repeat);
   const repeatValues = repeatFieldKey ? (data[repeatFieldKey]||'').split(',').map(s=>s.trim()).filter(s=>s) : [''];
 
-  // Dynamische Felder: alle fields + alle pair keys
+  // Dynamische Spalten: alle fields + alle pair keys
   let csvFields = Object.keys(t.fields).filter(f=>f!==repeatFieldKey);
   if(t.pairs && t.pairs.length>0){
     t.pairs.forEach(p=>{
       Object.keys(p).forEach(k=>{
-        if(k!=="editable" && k!=="perServer" && k!=="repeat" && !csvFields.includes(k)) csvFields.push(k);
+        if(!["editable","perServer","repeat"].includes(k) && !csvFields.includes(k)){
+          csvFields.push(k);
+        }
       });
     });
   }
@@ -237,36 +246,39 @@ function downloadCSV(){
 
     csvFields.forEach(f=>{
       if(f!==repeatFieldKey){
-        // zuerst perServer/repeat Input prüfen
+        // Per-Server Eingabe prüfen
         const input = form.querySelector(`[name='${f}_${val}']`);
         if(input) row[f] = input.value;
         else {
-          // sonst globales Feld
+          // Sonst globales Feld oder vordefinierter Wert
           row[f] = data[f] || '';
         }
       }
     });
 
-    // editable pairs
+    // editable:false pairs auch berücksichtigen
     if(t.pairs && t.pairs.length>0){
       t.pairs.forEach((pair,i)=>{
+        let pairRow = {...row};
         for(const key in pair){
-          if(key==="editable" || key==="perServer" || key==="repeat") continue;
+          if(["editable","perServer","repeat"].includes(key)) continue;
           const el = form.querySelector(`input[name='pair_${i}_${key}_${val}']`);
-          row[key] = el ? el.value : pair[key];
+          pairRow[key] = el ? el.value : pair[key]; // vordefinierter Wert fallback
         }
-        csvLines.push(csvFields.map(f=>row[f] || '').join(';'));
+        csvLines.push(csvFields.map(f=>pairRow[f] || '').join(';'));
       });
     } else {
       csvLines.push(csvFields.map(f=>row[f] || '').join(';'));
     }
   });
 
-  // Filename: multi → _
+  // Dateiname dynamisch
   let filename = t.filename || 'daten.csv';
   filename = filename.replace(/{{\s*([a-zA-Z0-9_]+)\s*}}/g,(m,key)=>{
     let val = data[key] || '';
-    if(t.fields[key] && t.fields[key].multi) val = val.split(',').map(s=>s.trim()).join('_');
+    if(t.fields[key] && t.fields[key].multi){
+      val = val.split(',').map(s=>s.trim()).join('_');
+    }
     return val;
   });
 
@@ -279,7 +291,6 @@ function downloadCSV(){
   link.click();
   document.body.removeChild(link);
 }
-
 </script>
 
 </body>
