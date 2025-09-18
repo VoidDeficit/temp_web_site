@@ -258,19 +258,29 @@ function updatePreview() {
 
   // Hilfs: Condition-Check mit Modes
   function checkCondition(value, cond) {
-    const checkVal = (value ?? "").toString();
     const mode = cond.mode || "equals";
-    switch (mode) {
-      case "equals": return checkVal === cond.value;
-      case "contains": return checkVal.includes(cond.value);
-      case "startsWith": return checkVal.startsWith(cond.value);
-      case "endsWith": return checkVal.endsWith(cond.value);
-      case "regex":
-        try { return new RegExp(cond.value).test(checkVal); }
-        catch (e) { return false; }
-      default: return false;
+        if (cond.multi) {
+            // Wert splitten und gegen jedes Teil prüfen
+            const parts = (value ?? "").toString().split(",").map(s => s.trim());
+            return parts.some(part => singleCheck(part, cond, mode));
+        } else {
+            return singleCheck((value ?? "").toString(), cond, mode);
+        }
     }
-  }
+
+    function singleCheck(checkVal, cond, mode) {
+        switch (mode) {
+            case "equals": return checkVal === cond.value;
+            case "contains": return checkVal.includes(cond.value);
+            case "startsWith": return checkVal.startsWith(cond.value);
+            case "endsWith": return checkVal.endsWith(cond.value);
+            case "regex":
+            try { return new RegExp(cond.value).test(checkVal); }
+            catch (e) { return false; }
+            default: return false;
+        }
+    }
+
 
   // Repeat-Feld bestimmen (nur ein repeat erlaubt)
   const repeatFieldKey = Object.keys(t.fields_csv).find(k => t.fields_csv[k].repeat);
