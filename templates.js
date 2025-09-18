@@ -1,7 +1,7 @@
 const templates = [
   {
     name: "Rechnung",
-    filename: "Rechnung_{{proxy}}_{{kunde}}.csv",
+    filename: "Rechnung_{{proxy}}_{{kunde}}_{{stage_name}}.csv",
     title: "stage_name {{stage_name}} location {{location}}  Rechnung für {{kunde}} - Ticket {{ticket_nr}}",
     text: "Sehr geehrte/r {{kunde}},\nRechnung für {{uname}} im stage {{stage_name}} über {{betrag}} Euro.\n\nMit freundlichen Grüßen\n{{firma}}",
 

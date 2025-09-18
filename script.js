@@ -250,11 +250,13 @@ function downloadCSV() {
   const t = templates[select.value];
   const data = {};
 
+  // Alle Formularwerte sammeln
   [...form.elements].forEach(el => {
     if (!el.name) return;
     data[el.name] = readInputValue(el);
   });
 
+  // Ref-Felder auflösen
   function resolveRefs(fields) {
     for (const k in fields) {
       const f = fields[k];
@@ -263,7 +265,6 @@ function downloadCSV() {
       }
     }
   }
-
   resolveRefs(t.fields_vorlage);
   resolveRefs(t.fields_csv);
 
@@ -280,29 +281,40 @@ function downloadCSV() {
     }
   }
 
+  // Hilfsfunktionen
   function checkCondition(value, cond) {
-    const checkVal = (value ?? "").toString();
-    const mode = cond.mode || "equals";
-    switch (mode) {
-      case "equals": return checkVal === cond.value;
-      case "contains": return checkVal.includes(cond.value);
-      case "startsWith": return checkVal.startsWith(cond.value);
-      case "endsWith": return checkVal.endsWith(cond.value);
-      case "regex":
-        try { return new RegExp(cond.value).test(checkVal); } catch (e) { return false; }
+    const val = value ?? '';
+    switch (cond.mode || "equals") {
+      case "equals": return val === cond.value;
+      case "contains": return val.includes(cond.value);
+      case "startsWith": return val.startsWith(cond.value);
+      case "endsWith": return val.endsWith(cond.value);
+      case "regex": try { return new RegExp(cond.value).test(val); } catch(e){ return false; }
       default: return false;
     }
   }
 
-  let csvFields = Object.keys(t.fields_csv);
-  if (t.pairs && t.pairs.length > 0) {
-    t.pairs.forEach(p => {
-      Object.keys(p).forEach(k => {
-        if (!["editable", "perRepeat"].includes(k) && !csvFields.includes(k)) csvFields.push(k);
+  function applyConditions(fieldKey, fieldDef) {
+    let baseVal = data[fieldKey] ?? fieldDef.value ?? '';
+    if (!fieldDef.conditions || !fieldDef.conditions.length) return baseVal;
+
+    // Wenn split aktiviert, mehrfach prüfen
+    const splitCond = fieldDef.conditions.some(c => c.split);
+    const sourceVal = splitCond ? (data[fieldDef.conditions[0].key] ?? '').split(',').map(s => s.trim()).filter(Boolean) : [baseVal];
+
+    const results = [];
+    sourceVal.forEach(v => {
+      fieldDef.conditions.forEach(c => {
+        if (checkCondition(v, c) && !results.includes(c.set)) results.push(c.set);
       });
     });
+
+    // Leerzeichen zwischen mehreren Ergebnissen
+    return results.length ? results.join(' ') : baseVal;
   }
 
+  // CSV Felder vorbereiten
+  const csvFields = Object.keys(t.fields_csv);
   const header = csvFields.map(f => unsanitizeKey(f));
   const csvLines = [header.join(';')];
 
@@ -316,48 +328,18 @@ function downloadCSV() {
       const perInput = form.querySelector(`[name='${f}_${rv}']`);
       if (perInput) { baseRow[f] = readInputValue(perInput); return; }
 
-      const csvDef = t.fields_csv[f] || {};
-      if (csvDef.ref && csvDef.perRepeat) {
-        const refPer = form.querySelector(`[name='${csvDef.ref}_${rv}']`);
-        if (refPer) { baseRow[f] = readInputValue(refPer); return; }
-      }
-
-      const conds = t.fields_csv[f]?.conditions ?? t.fields_vorlage[f]?.conditions;
-      if (conds && conds.length) {
-        let matched = false;
-        for (const c of conds) {
-          const condPerInput = form.querySelector(`[name='${c.key}_${rv}']`);
-          const compareVal = condPerInput ? readInputValue(condPerInput) : (data[c.key] ?? t.fields_vorlage[c.key]?.value ?? t.fields_csv[c.key]?.value ?? '');
-          if (checkCondition(compareVal, c)) { baseRow[f] = c.set; matched = true; break; }
-        }
-        if (matched) return;
-      }
-
-      baseRow[f] = data[f] ?? t.fields_csv[f]?.value ?? t.fields_vorlage[f]?.value ?? '';
+      const csvDef = t.fields_csv[f] || t.fields_vorlage[f] || {};
+      baseRow[f] = applyConditions(f, csvDef);
     });
 
-    if (t.pairs && t.pairs.length > 0) {
-      t.pairs.forEach((pair, i) => {
-        let pairRow = { ...baseRow };
-        for (const k in pair) {
-          if (["editable", "perRepeat"].includes(k)) continue;
-          const el = form.querySelector(`[name='pair_${i}_${k}_${rv}']`);
-          pairRow[k] = el ? readInputValue(el) : pair[k];
-        }
-        csvLines.push(csvFields.map(f => pairRow[f] || '').join(';'));
-      });
-    } else {
-      csvLines.push(csvFields.map(f => baseRow[f] || '').join(';'));
-    }
+    csvLines.push(csvFields.map(f => baseRow[f] || '').join(';'));
   });
 
+  // Dateiname mit Conditions
   let filename = t.filename || 'daten.csv';
   filename = filename.replace(/{{\s*([a-zA-Z0-9_]+)\s*}}/g, (m, key) => {
-    let valFile = data[key] || '';
-    if ((t.fields_csv[key] && t.fields_csv[key].multi) || (t.fields_vorlage[key] && t.fields_vorlage[key].multi)) {
-      valFile = valFile.split(',').map(s => s.trim()).join('_');
-    }
-    return valFile;
+    const fieldDef = t.fields_csv[key] || t.fields_vorlage[key] || {};
+    return applyConditions(key, fieldDef);
   });
 
   const bom = "\uFEFF";
