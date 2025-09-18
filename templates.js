@@ -28,14 +28,14 @@ const templates = [
       kunde: { repeat:false, multi:false, conditions:[] },
       betrag: { repeat:false, multi:false, conditions:[] },
       proxy: { repeat:false, multi:false, conditions:[] },
-      stage: { 
-        repeat:false, 
-        multi:false, 
-        conditions:[ 
-          { key:"stage", value:"Abbau", setValue:"am Abbau" },  // Wenn stage=Abbau, CSV-Wert = "am Abbau"
-          { key:"stage", value:"Aufbau", setValue:"am Aufbau" } // Wenn stage=Aufbau, CSV-Wert = "am Aufbau"
-        ] 
-      },
+      //stage: { 
+      //  repeat:false, 
+      //  multi:false, 
+      //  conditions:[ 
+      //    { key:"stage", value:"Abbau", setValue:"am Abbau" },  // Wenn stage=Abbau, CSV-Wert = "am Abbau"
+      //    { key:"stage", value:"Aufbau", setValue:"am Aufbau" } // Wenn stage=Aufbau, CSV-Wert = "am Aufbau"
+      //  ] 
+      //},
       firma_tews: { repeat:false, multi:false, conditions:[] }
     },
 

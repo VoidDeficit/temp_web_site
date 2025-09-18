@@ -193,7 +193,7 @@ function updatePreview() {
   const t = templates[select.value];
   const data = {};
 
-  // Alle Formularwerte sammeln
+  // Werte aus Formular sammeln
   [...form.elements].forEach(el => {
     if (!el.name) return;
     if (el.tagName === "SELECT" && el.multiple) {
@@ -203,28 +203,27 @@ function updatePreview() {
     }
   });
 
-  // Conditions aus fields_vorlage anwenden
+  // Conditions in fields_vorlage anwenden (auch wenn Variable nicht in CSV)
   for (const key in t.fields_vorlage) {
     const f = t.fields_vorlage[key];
-
     let value = data[key] !== undefined ? data[key] : f.value || '';
 
     if (f.conditions && f.conditions.length) {
       for (const c of f.conditions) {
         if (data[c.key] === c.value) {
-          value = c.set; // Condition greift, set-Wert übernehmen
-          break; // erste passende Condition verwenden
+          value = c.set;
+          break;
         }
       }
     }
-
-    data[key] = value; // finale Variable
+    data[key] = value;
   }
 
-  // Preview aktualisieren
+  // Vorschau (Titel/Text) mit den finalen Werten füllen
   titleBox.innerText = fillPlaceholders(t.title, data);
   preview.innerText = fillPlaceholders(t.text, data);
 }
+
 
 // CSV Export
 function downloadCSV() {
