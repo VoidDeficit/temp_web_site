@@ -3,7 +3,7 @@ const form = document.getElementById('inputForm');
 const preview = document.getElementById('preview');
 const titleBox = document.getElementById('titleBox');
 
-// Dropdown
+// Dropdown füllen
 templates.forEach((t,i)=>{
   const opt = document.createElement('option');
   opt.value = i; opt.textContent = t.name;
@@ -20,91 +20,90 @@ function fillPlaceholders(str,data){
   });
 }
 
-// Build form
+// Feld-Renderer (input oder select)
+function createInput(key,f,value,nameOverride){
+  let el;
+  if(f.options && Array.isArray(f.options)){
+    el = document.createElement('select');
+    (f.options).forEach(opt=>{
+      const o = document.createElement('option');
+      o.value = opt; o.textContent = opt;
+      if(opt===(value||f.value)) o.selected = true;
+      el.appendChild(o);
+    });
+    el.disabled = f.editable===false;
+  } else {
+    el = document.createElement('input');
+    el.type = "text";
+    el.value = value || f.value || "";
+    el.readOnly = f.editable===false;
+  }
+  el.name = nameOverride || key;
+  return el;
+}
+
+// Formular bauen
 function buildForm(t){
   form.innerHTML='';
 
-  // non-repeat editable fields
+  // normale Felder (kein repeat, kein perServer)
   for(const key in t.fields){
     const f = t.fields[key];
-    if(f.editable && !f.perServer && !f.repeat){
+    if(!f.repeat && !f.perServer){
       const label = document.createElement('label');
-      label.textContent = unsanitizeKey(key) + (f.multi?' (mehrere durch Komma)':'') + ':';
-      const input = document.createElement('input');
-      input.name = key;
-      input.value = f.value || '';
+      label.textContent = unsanitizeKey(key)+(f.multi?' (mehrere durch Komma)':'')+':';
+      const input = createInput(key,f,f.value);
       form.appendChild(label);
       form.appendChild(input);
     }
   }
 
-  // Repeat field
+  // Repeat-Feld
   const repeatFieldKey = Object.keys(t.fields).find(k=>t.fields[k].repeat);
   if(repeatFieldKey){
     const f = t.fields[repeatFieldKey];
     const label = document.createElement('label');
-    label.textContent = unsanitizeKey(repeatFieldKey) + (f.multi?' (mehrere durch Komma)':'') + ':';
-    const input = document.createElement('input');
-    input.name = repeatFieldKey;
-    input.value = f.value || '';
+    label.textContent = unsanitizeKey(repeatFieldKey)+(f.multi?' (mehrere durch Komma)':'')+':';
+    const input = createInput(repeatFieldKey,f,f.value);
+    input.addEventListener('input',()=>buildRepeatFields(t));
     form.appendChild(label);
     form.appendChild(input);
-    input.addEventListener('input',()=>buildRepeatFields(t));
   }
-
-  // placeholders in title/text not in fields
-  const allPlaceholders = new Set((t.title+t.text).match(/{{\s*([a-zA-Z0-9_äöüÄÖÜß]+)\s*}}/g)||[]);
-  allPlaceholders.forEach(ph=>{
-    const key = ph.replace(/[{}]/g,'').trim();
-    if(!(key in t.fields) && !form.querySelector(`[name='${sanitizeKey(key)}']`)){
-      const label = document.createElement('label');
-      label.textContent = key + ':';
-      const input = document.createElement('input');
-      input.name = sanitizeKey(key);
-      input.value = '';
-      form.appendChild(label);
-      form.appendChild(input);
-    }
-  });
 
   buildRepeatFields(t);
 }
 
-// Repeat per value
+// Repeat dynamisch
 function buildRepeatFields(t){
-  const old = form.querySelectorAll('.dynamic-repeat');
-  old.forEach(el=>el.remove());
+  form.querySelectorAll('.dynamic-repeat').forEach(el=>el.remove());
 
   const repeatFieldKey = Object.keys(t.fields).find(k=>t.fields[k].repeat);
   if(!repeatFieldKey) return;
-  const repeatInput = form.querySelector(`input[name='${repeatFieldKey}']`);
+  const repeatInput = form.querySelector(`[name='${repeatFieldKey}']`);
   const repeatValues = (repeatInput.value||'').split(',').map(s=>s.trim()).filter(s=>s);
-  if(!repeatValues.length) return;
 
   repeatValues.forEach(val=>{
     const div = document.createElement('div');
     div.className='dynamic-repeat';
 
-    // editable perServer fields
+    // perServer fields
     for(const key in t.fields){
       const f = t.fields[key];
-      if(f.editable && f.perServer){
+      if(f.perServer){
         const label = document.createElement('label');
-        label.textContent = `${unsanitizeKey(key)} für ${val}` + (f.multi?' (mehrere durch Komma)':'') + ':';
-        const input = document.createElement('input');
-        input.name = `${key}_${val}`;
-        input.value = f.value || '';
+        label.textContent = `${unsanitizeKey(key)} für ${val}:`;
+        const input = createInput(key,f,f.value,`${key}_${val}`);
         div.appendChild(label);
         div.appendChild(input);
       }
     }
 
-    // editable pairs perServer
+    // editable pairs
     if(t.pairs && t.pairs.length>0){
       t.pairs.forEach((pair,i)=>{
         if(pair.editable){
           for(const key in pair){
-            if(key==="editable" || key==="perServer" || key==="repeat") continue;
+            if(["editable","perServer"].includes(key)) continue;
             const label = document.createElement('label');
             label.textContent = `${unsanitizeKey(key)} für ${val} (Pair #${i+1})`;
             const input = document.createElement('input');
@@ -121,12 +120,11 @@ function buildRepeatFields(t){
   });
 }
 
-// Template change
+// Template-Wechsel
 select.addEventListener('change',()=>{
   buildForm(templates[select.value]);
   updatePreview();
 });
-
 buildForm(templates[0]);
 
 // Preview
@@ -143,28 +141,18 @@ function updatePreview(){
 function downloadCSV(){
   const t = templates[select.value];
   const data={};
-  [...form.elements].forEach(el=>{
-    if(el.name) data[el.name] = el.value;
-  });
+  [...form.elements].forEach(el=>{ if(el.name) data[el.name]=el.value; });
+  for(const key in t.fields){ if(!data[key] && t.fields[key].value!==undefined) data[key]=t.fields[key].value; }
 
-  // Feste Werte auch übernehmen (editable:false)
-  for(const key in t.fields){
-    if(!data[key] && t.fields[key].value !== undefined){
-      data[key] = t.fields[key].value;
-    }
-  }
-
-  // Repeat-Feld ermitteln
   const repeatFieldKey = Object.keys(t.fields).find(k=>t.fields[k].repeat);
   const repeatValues = repeatFieldKey ? (data[repeatFieldKey]||'').split(',').map(s=>s.trim()).filter(s=>s) : [''];
 
-  // Spaltenreihenfolge: so wie in fields definiert
+  // Header = Reihenfolge wie definiert
   let csvFields = Object.keys(t.fields);
-  // + pairs dynamisch hinzufügen
   if(t.pairs && t.pairs.length>0){
     t.pairs.forEach(p=>{
       Object.keys(p).forEach(k=>{
-        if(!["editable","perServer","repeat"].includes(k) && !csvFields.includes(k)){
+        if(!["editable","perServer"].includes(k) && !csvFields.includes(k)){
           csvFields.push(k);
         }
       });
@@ -179,33 +167,26 @@ function downloadCSV(){
     if(repeatFieldKey) row[repeatFieldKey] = val;
 
     csvFields.forEach(f=>{
-      if(f===repeatFieldKey) return; // schon gesetzt
-      // Per-Server Eingabe prüfen
-      const input = form.querySelector(`[name='${f}_${val}']`);
-      if(input) row[f] = input.value;
-      else {
-        // Sonst globales Feld oder vordefinierter Wert
-        row[f] = data[f] || '';
-      }
+      if(f===repeatFieldKey) return;
+      const el = form.querySelector(`[name='${f}_${val}']`);
+      row[f] = el ? el.value : (data[f]||'');
     });
 
-    // editable:false pairs auch berücksichtigen
     if(t.pairs && t.pairs.length>0){
       t.pairs.forEach((pair,i)=>{
-        let pairRow = {...row};
+        let pairRow={...row};
         for(const key in pair){
-          if(["editable","perServer","repeat"].includes(key)) continue;
-          const el = form.querySelector(`input[name='pair_${i}_${key}_${val}']`);
-          pairRow[key] = el ? el.value : pair[key]; // vordefinierter Wert fallback
+          if(["editable","perServer"].includes(key)) continue;
+          const el=form.querySelector(`[name='pair_${i}_${key}_${val}']`);
+          pairRow[key] = el ? el.value : pair[key];
         }
-        csvLines.push(csvFields.map(f=>pairRow[f] || '').join(';'));
+        csvLines.push(csvFields.map(f=>pairRow[f]||'').join(';'));
       });
     } else {
-      csvLines.push(csvFields.map(f=>row[f] || '').join(';'));
+      csvLines.push(csvFields.map(f=>row[f]||'').join(';'));
     }
   });
 
-  // Dateiname dynamisch (mit Multi-Handling)
   let filename = t.filename || 'daten.csv';
   filename = filename.replace(/{{\s*([a-zA-Z0-9_]+)\s*}}/g,(m,key)=>{
     let val = data[key] || '';
