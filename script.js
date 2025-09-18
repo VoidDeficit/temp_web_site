@@ -25,34 +25,36 @@ function fillPlaceholders(str, data) {
 function buildForm(t) {
   form.innerHTML = '';
 
-  // Nicht-Repeat, editable fields aus Vorlage
-  for (const key in t.fields_vorlage) {
-    const f = t.fields_vorlage[key];
-    if (!f.editable) continue;
+  // editable perRepeat fields aus fields_vorlage UND fields_csv
+    for (const key in {...t.fields_vorlage, ...t.fields_csv}) {
+        const f = {...t.fields_vorlage, ...t.fields_csv}[key];
+        if (f.editable && f.perRepeat) {
+            const label = document.createElement('label');
+            label.textContent = `${unsanitizeKey(key)} für ${val}` + (f.multi ? ' (mehrere durch Komma)' : '') + ':';
 
-    const label = document.createElement('label');
-    label.textContent = unsanitizeKey(key) + (f.multi ? ' (mehrere durch Komma)' : '') + ':';
+            let input;
+            if (f.options && Array.isArray(f.options)) {
+                input = document.createElement('select');
+                if (f.multi) input.multiple = true;
+                f.options.forEach(optVal => {
+                    const opt = document.createElement('option');
+                    opt.value = optVal;
+                    opt.textContent = optVal;
+                    if (optVal === f.value) opt.selected = true;
+                    input.appendChild(opt);
+                });
+            } else {
+                input = document.createElement('input');
+                input.type = 'text';
+                input.value = f.value || '';
+            }
 
-    let input;
-    if (f.options && Array.isArray(f.options)) {
-      input = document.createElement('select');
-      if (f.multi) input.multiple = true;
-      f.options.forEach(optVal => {
-        const opt = document.createElement('option');
-        opt.value = optVal;
-        opt.textContent = optVal;
-        if (optVal === f.value) opt.selected = true;
-        input.appendChild(opt);
-      });
-    } else {
-      input = document.createElement('input');
-      input.type = 'text';
-      input.value = f.value || '';
+            input.name = `${key}_${val}`;
+            div.appendChild(label);
+            div.appendChild(input);
+        }
     }
-    input.name = key;
-    form.appendChild(label);
-    form.appendChild(input);
-  }
+
 
   // Repeat-Feld aus CSV
   const repeatFieldKey = Object.keys(t.fields_csv).find(k => t.fields_csv[k].repeat);
