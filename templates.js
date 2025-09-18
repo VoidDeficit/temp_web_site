@@ -25,7 +25,14 @@ const templates = [
             { key: "stage", value: "Transport", set: "beim Transport" }
             ],
         },
-        firma_tews: { value:"Tews GmbH", editable:false, multi:false, repeat:false, options:null, perRepeat:false, conditions:[] }
+        firma_tews: { value:"Tews GmbH", editable:false, multi:false, repeat:false, options:null, perRepeat:false, conditions:[] },
+        location: {
+            value: "",
+            editable: true,
+            perRepeat: false,
+            multi: false,
+            ref: "stage"  // <- kopiert automatisch den Wert von stage
+        }
     },
 
     fields_csv: {

@@ -254,13 +254,36 @@ function downloadCSV() {
     const t = templates[select.value];
     const data = {};
     [...form.elements].forEach(el => {
-        if (!el.name) return;
-        if (el.tagName === "SELECT" && el.multiple) {
-            data[el.name] = Array.from(el.selectedOptions).map(o => o.value).join(',');
-        } else {
-            data[el.name] = el.value;
-        }
+    if (!el.name) return;
+    if (el.tagName === "SELECT" && el.multiple) {
+        data[el.name] = Array.from(el.selectedOptions).map(o => o.value).join(',');
+    } else {
+        data[el.name] = el.value;
+    }
     });
+
+    // Hier einfügen: ref-Werte übernehmen
+    for (const key in t.fields_vorlage) {
+    const f = t.fields_vorlage[key];
+    if (f.ref && data[f.ref] !== undefined) {
+        data[key] = data[f.ref];
+    }
+    }
+
+    // Danach kommen deine bisherigen Conditions-Checks
+    for (const key in t.fields_vorlage) {
+    const f = t.fields_vorlage[key];
+    if (f.conditions && f.conditions.length) {
+        for (const c of f.conditions) {
+        if (data[c.key] === c.value) {
+            data[key] = c.set;
+            break;
+        }
+        }
+    } else {
+        if (data[key] === undefined) data[key] = f.value || '';
+    }
+    }
 
     // feste Werte übernehmen
     for (const key in t.fields_csv) {
