@@ -206,25 +206,25 @@ function updatePreview() {
   // Conditions aus fields_vorlage anwenden
   for (const key in t.fields_vorlage) {
     const f = t.fields_vorlage[key];
+
+    let value = data[key] !== undefined ? data[key] : f.value || '';
+
     if (f.conditions && f.conditions.length) {
       for (const c of f.conditions) {
         if (data[c.key] === c.value) {
-          data[key] = c.set;
-          break; // erste passende Condition übernehmen
+          value = c.set; // Condition greift, set-Wert übernehmen
+          break; // erste passende Condition verwenden
         }
       }
     }
-    // Falls keine Condition greift, Standardwert verwenden
-    if (data[key] === undefined) {
-      data[key] = f.value || '';
-    }
+
+    data[key] = value; // finale Variable
   }
 
+  // Preview aktualisieren
   titleBox.innerText = fillPlaceholders(t.title, data);
   preview.innerText = fillPlaceholders(t.text, data);
 }
-
-
 
 // CSV Export
 function downloadCSV() {
