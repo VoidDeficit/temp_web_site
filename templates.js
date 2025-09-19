@@ -26,8 +26,8 @@ const templates = [
     },
 
     fields_csv: {
-      // CSV bekommt server_uname automatisch vom server-Feld
-      server_uname: { ref:"server", editable:false, repeat:true, multi:true, conditions:[] },
+      // CSV bekommt server_csv automatisch vom server-Feld
+      server_csv: { ref:"server", editable:false, repeat:true, multi:true, conditions:[] },
       kunde_csv:   { repeat:false, multi:false, conditions:[] },
       betrag_csv:  { repeat:false, multi:false, conditions:[] },
       user:    {},
