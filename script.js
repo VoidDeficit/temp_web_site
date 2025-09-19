@@ -318,6 +318,7 @@ function downloadCSV() {
     repeatValues = data[repeatMasterKey].split(',').map(s => s.trim()).filter(Boolean);
   }
 
+  // Condition check
   function checkCondition(value, cond) {
     const val = (value ?? "").toString();
     switch (cond.mode) {
@@ -331,25 +332,21 @@ function downloadCSV() {
   }
 
   function applyConditions(key, def, repeatVal = null) {
-    let base = data[key] ?? def.value ?? '';
+    let base = repeatVal !== null
+      ? (data[`${def.ref || key}_${repeatVal}`] ?? repeatVal)
+      : (data[key] ?? def.value ?? '');
+
     if (!def.conditions?.length) return base;
 
-    const results = [];
-    def.conditions.forEach(c => {
-      let source = repeatVal ?? (data[c.key] ?? '');
-      let parts = c.split ? source.split(',').map(s=>s.trim()).filter(Boolean) : [source];
-      parts.forEach(p => { if (checkCondition(p, c)) results.push(c.set); });
-    });
-
-    if (def.uniqueResult) return [...new Set(results)].join(' ');
-    return results.join(' ');
+    for (const c of def.conditions) {
+      const compareVal = data[c.key] ?? '';
+      if (checkCondition(compareVal, c)) return c.set;
+    }
+    return base;
   }
-  
+
   // CSV Header
-  const csvFields = [...new Set([
-    ...Object.keys(t.fields_csv),
-    ...(t.pairs?.length ? t.pairs.flatMap(p => Object.keys(p).filter(k => !["editable","perRepeat"].includes(k))) : [])
-  ])];
+  const csvFields = Object.keys(t.fields_csv);
   const csvLines = [csvFields.map(f => unsanitizeKey(f)).join(';')];
 
   // CSV-Zeilen erzeugen
@@ -363,15 +360,12 @@ function downloadCSV() {
     csvFields.forEach(f => {
       const def = t.fields_csv[f] ?? t.fields_vorlage[f] ?? {};
 
-      if (def.perRepeat) {
-        const keyToUse = def.ref ? def.ref : f; // Referenz auf anderes Feld
-        baseRow[f] = data[`${keyToUse}_${rv}`] ?? rv;
-      } else if (def.repeat) {
-        // repeat:true, ref? nur der aktuelle Loop-Wert
-        const keyToUse = def.ref ? def.ref : f;
-        baseRow[f] = data[keyToUse]?.split(',')[repeatValues.indexOf(rv)] ?? rv;
+      if (def.perRepeat || def.repeat) {
+        // Für perRepeat oder repeat:true Felder: ref + conditions beachten
+        baseRow[f] = applyConditions(f, def, rv);
       } else {
-        baseRow[f] = data[f] ?? (def.value ?? '');
+        // normale Felder
+        baseRow[f] = applyConditions(f, def);
       }
     });
 
