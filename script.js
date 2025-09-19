@@ -160,19 +160,23 @@ function buildRepeatFields(t) {
     if (t.pairs && t.pairs.length > 0) {
       t.pairs.forEach((pair, i) => {
         if (!pair.perRepeat) return;
+        if (pair.editable === false) return; // 🚀 NEU: skip pairs mit editable:false
+
         for (const key in pair) {
           if (["editable","perRepeat"].includes(key)) continue;
           const label = document.createElement('label');
           label.textContent = `${unsanitizeKey(key)} für ${rv} (Pair #${i+1})`;
           const input = document.createElement('input');
           input.name = `pair_${i}_${key}_${rv}`;
-          input.value = prev[`pair_${i}_${key}_${rv}`] !== undefined ? prev[`pair_${i}_${key}_${rv}`] : pair[key] || '';
+          input.value = prev[`pair_${i}_${key}_${rv}`] !== undefined
+            ? prev[`pair_${i}_${key}_${rv}`]
+            : pair[key] || '';
           div.appendChild(label);
           div.appendChild(input);
         }
       });
     }
-
+    
     form.appendChild(div);
   });
 }
