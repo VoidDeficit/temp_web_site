@@ -38,15 +38,13 @@ const templates = [
                    { key:"stage", value:"^Tr", set:"proxy3", mode:"regex" }
                  ]
                },
-      test:    { ref:"test_repeat", repeat:false, multi:false, perRepeat:true, conditions:[] },
+      test:    { ref:"test_repeat",editable:false, repeat:false, multi:false, perRepeat:true, conditions:[] },
       firma:   { repeat:false, multi:false, conditions:[] },
       group:   {}
     },
-
-    pairBy: "proxy",
     pairs: [
       { user:"example_user1", group:"example_group1", editable:false, perRepeat:true },
-      { user:"example_user2", group:"example_group2", editable:true, perRepeat:true },
+      { user:"example_user2", group:"example_group2", editable:false, perRepeat:true },
       { user:"example_user1", group:"example_group2", editable:false, perRepeat:true }
     ]
   }
