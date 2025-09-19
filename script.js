@@ -318,8 +318,38 @@ function downloadCSV() {
     repeatValues = data[repeatMasterKey].split(',').map(s => s.trim()).filter(Boolean);
   }
 
+  function checkCondition(value, cond) {
+    const val = (value ?? "").toString();
+    switch (cond.mode) {
+      case "equals": return val === cond.value;
+      case "contains": return val.includes(cond.value);
+      case "startsWith": return val.startsWith(cond.value);
+      case "endsWith": return val.endsWith(cond.value);
+      case "regex": try { return new RegExp(cond.value, 'i').test(val); } catch(e){ return false; }
+      default: return false;
+    }
+  }
+
+  function applyConditions(key, def, repeatVal = null) {
+    let base = data[key] ?? def.value ?? '';
+    if (!def.conditions?.length) return base;
+
+    const results = [];
+    def.conditions.forEach(c => {
+      let source = repeatVal ?? (data[c.key] ?? '');
+      let parts = c.split ? source.split(',').map(s=>s.trim()).filter(Boolean) : [source];
+      parts.forEach(p => { if (checkCondition(p, c)) results.push(c.set); });
+    });
+
+    if (def.uniqueResult) return [...new Set(results)].join(' ');
+    return results.join(' ');
+  }
+  
   // CSV Header
-  const csvFields = Object.keys(t.fields_csv);
+  const csvFields = [...new Set([
+    ...Object.keys(t.fields_csv),
+    ...(t.pairs?.length ? t.pairs.flatMap(p => Object.keys(p).filter(k => !["editable","perRepeat"].includes(k))) : [])
+  ])];
   const csvLines = [csvFields.map(f => unsanitizeKey(f)).join(';')];
 
   // CSV-Zeilen erzeugen
