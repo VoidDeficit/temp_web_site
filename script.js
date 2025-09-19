@@ -348,39 +348,44 @@ function downloadCSV() {
 
   const csvLines = [csvFields.map(f => unsanitizeKey(f)).join(';')];
 
-  // CSV-Zeilen generieren
+  // CSV-Zeilen erzeugen
   repeatValues.forEach(rv => {
     const baseRow = {};
 
+    // Repeat-Master selbst
+    if (repeatMasterKey) baseRow[repeatMasterKey] = rv;
+
+    // alle Felder durchgehen
     csvFields.forEach(f => {
-      const def = t.fields_csv[f] ?? {};
+      const def = t.fields_csv[f] ?? t.fields_vorlage[f] ?? {};
       if (def.perRepeat) {
-        // pro Repeat -> value aus data[feld_repeatWert]
         baseRow[f] = data[`${f}_${rv}`] ?? applyConditions(f, def, rv) ?? '';
-      } else if (def.repeat) {
-        // repeat:true Felder -> aktueller Wert aus Split
-        baseRow[f] = rv;
-      } else if (def.ref) {
-        // Referenzen übernehmen
-        baseRow[f] = data[def.ref] ?? '';
       } else {
         baseRow[f] = applyConditions(f, def) || (data[f] ?? (def.value ?? ''));
       }
     });
 
-    // Pairs pro Repeat
+    // Pairs pro Repeat dynamisch
     if (t.pairs?.length) {
-      t.pairs.forEach(pair => {
+      t.pairs.forEach((pair, i) => {
         const row = { ...baseRow };
-        Object.keys(pair).forEach(k => {
-          if (!["editable","perRepeat","conditions"].includes(k)) row[k] = pair[k];
-        });
+        if (pair.perRepeat) {
+          // Pair-Werte überschreiben / hinzufügen
+          Object.keys(pair).forEach(k => {
+            if (!["editable","perRepeat"].includes(k)) {
+              // Daten aus UI bevorzugen, sonst Pair-Default
+              const dynKey = `pair_${i}_${k}_${rv}`;
+              row[k] = data[dynKey] ?? pair[k];
+            }
+          });
+        }
         csvLines.push(csvFields.map(f => row[f] || '').join(';'));
       });
     } else {
       csvLines.push(csvFields.map(f => baseRow[f] || '').join(';'));
     }
   });
+
 
   // Dateiname mit Platzhaltern
   let filename = t.filename || 'daten.csv';
